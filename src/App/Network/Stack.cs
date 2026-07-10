@@ -12,8 +12,10 @@ public sealed class Stack
     // this is the mac address of this stack
     private readonly MacAddress _macAddress = new MacAddress(0x02, 0x00, 0x00, 0x00, 0x00, 0x02);
 
-    public async Task<EthernetFrame> HandleFrameAsync(EthernetFrame incoming)
+    public async Task<EthernetFrame> HandleFrameAsync(byte[] bytes)
     {
+        EthernetFrame incoming = EthernetFrame.Parse(bytes);
+
         return incoming.EtherTypeEnum switch
         {
             EtherType.ARP => ArpPacket.HandlePacket(incoming),

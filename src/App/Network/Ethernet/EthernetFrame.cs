@@ -9,4 +9,17 @@ namespace App.Network.Ethernet;
 public record struct EthernetFrame(MacAddress Destination, MacAddress Source, ushort EtherType, byte[] Payload)
 {
     public EtherType EtherTypeEnum => (EtherType)EtherType;
+
+    public static EthernetFrame Parse(byte[] bytes)
+    {
+        if (bytes.Length < 14)
+            throw new ArgumentException("Ethernet frame must be at least 14 bytes long.");
+
+        var destination = new MacAddress(bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]);
+        var source = new MacAddress(bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11]);
+        var etherType = BitConverter.ToUInt16(bytes[12..14]);
+        var payload = bytes[14..];
+
+        return new EthernetFrame(destination, source, etherType, payload);
+    }
 }

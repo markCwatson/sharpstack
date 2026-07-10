@@ -1,5 +1,6 @@
 ﻿using App.Network;
 using App.Device;
+using App.Network.Ethernet;
 
 namespace App;
 
@@ -12,8 +13,8 @@ class Program
 
         while (true)
         {
-            var bytes = await device.ReadFrameAsync();
-            var outgoing = await stack.HandleFrameAsync(bytes);
+            byte[] bytes = await device.ReadFrameAsync();
+            EthernetFrame outgoing = await stack.HandleFrameAsync(bytes);
             await device.WriteFrameAsync(outgoing);
         }
     }

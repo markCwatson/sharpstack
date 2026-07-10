@@ -42,9 +42,11 @@ public sealed class Tap : IDevice
         _stream = new FileStream(handle, FileAccess.ReadWrite, bufferSize: 2048, isAsync: false);
     }
 
-    public Task<EthernetFrame> ReadFrameAsync()
+    public async Task<byte[]> ReadFrameAsync()
     {
-        throw new NotImplementedException();
+        byte[] buffer = new byte[2048];
+        var numBytes = await _stream.ReadAsync(buffer);
+        return buffer.AsSpan(0, numBytes).ToArray();
     }
 
     public Task WriteFrameAsync(EthernetFrame frame)
