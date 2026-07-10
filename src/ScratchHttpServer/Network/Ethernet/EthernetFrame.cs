@@ -8,5 +8,5 @@ namespace ScratchHttpServer.Network.Ethernet;
 
 public record struct EthernetFrame(MacAddress Destination, MacAddress Source, ushort EtherType, byte[] Payload)
 {
-
+    public EtherType EtherTypeEnum => (EtherType)EtherType;
 }
