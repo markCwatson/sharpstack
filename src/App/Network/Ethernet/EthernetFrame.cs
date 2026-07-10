@@ -22,4 +22,14 @@ public record struct EthernetFrame(MacAddress Destination, MacAddress Source, us
 
         return new EthernetFrame(destination, source, etherType, payload);
     }
+
+    public byte[] ToBytes()
+    {
+        var bytes = new byte[14 + Payload.Length];
+        Destination.CopyTo(bytes.AsSpan(0, 6));
+        Source.CopyTo(bytes.AsSpan(6, 6));
+        BitConverter.TryWriteBytes(bytes.AsSpan(12, 2), EtherType);
+        Payload.CopyTo(bytes.AsSpan(14));
+        return bytes;
+    }
 }

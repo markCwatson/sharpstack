@@ -49,9 +49,9 @@ public sealed class Tap : IDevice
         return buffer.AsSpan(0, numBytes).ToArray();
     }
 
-    public Task WriteFrameAsync(EthernetFrame frame)
+    public async Task WriteFrameAsync(EthernetFrame frame)
     {
-        throw new NotImplementedException();
+        await _stream.WriteAsync(frame.ToBytes());
     }
 
     // note : AI generated these DLL imports to be used in the ctor too
