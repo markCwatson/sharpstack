@@ -1,4 +1,4 @@
-﻿namespace ScratchHttpServer.Tests;
+﻿namespace App.Tests;
 
 public class UnitTest1
 {

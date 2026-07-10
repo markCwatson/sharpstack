@@ -1,6 +1,6 @@
-using ScratchHttpServer.Network.Ethernet;
+using App.Network.Ethernet;
 
-namespace ScratchHttpServer.Device;
+namespace App.Device;
 
 public sealed class Tap() : IDevice
 {

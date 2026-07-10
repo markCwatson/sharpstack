@@ -1,6 +1,6 @@
-using ScratchHttpServer.Network.Ethernet;
+using App.Network.Ethernet;
 
-namespace ScratchHttpServer.Network.Arp;
+namespace App.Network.Arp;
 
 public static class ArpPacket
 {

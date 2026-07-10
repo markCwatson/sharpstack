@@ -2,10 +2,10 @@ The cleanest setup is a standard multi-project .NET solution:
 
 ```text
 csharp-http-server/
-├── ScratchHttpServer.sln
+├── App.sln
 ├── src/
-│   └── ScratchHttpServer/
-│       ├── ScratchHttpServer.csproj
+│   └── App/
+│       ├── App.csproj
 │       ├── Program.cs
 │       ├── Application/
 │       ├── Network/
@@ -18,8 +18,8 @@ csharp-http-server/
 │       ├── Devices/
 │       └── wwwroot/
 ├── tests/
-│   └── ScratchHttpServer.Tests/
-│       ├── ScratchHttpServer.Tests.csproj
+│   └── App.Tests/
+│       ├── App.Tests.csproj
 │       ├── Network/
 │       ├── Http/
 │       └── Fixtures/
@@ -32,18 +32,18 @@ csharp-http-server/
 cd /Users/mark/repos/csharp-http-server
 
 dotnet new sln \
-  --name ScratchHttpServer \
+  --name App \
   --format sln
 
 dotnet new console \
-  --name ScratchHttpServer \
-  --output src/ScratchHttpServer \
+  --name App \
+  --output src/App \
   --framework net10.0 \
   --use-program-main
 
 dotnet new xunit \
-  --name ScratchHttpServer.Tests \
-  --output tests/ScratchHttpServer.Tests \
+  --name App.Tests \
+  --output tests/App.Tests \
   --framework net10.0
 ```
 
@@ -52,12 +52,12 @@ dotnet new xunit \
 **Add projects to the solution**
 
 ```bash
-dotnet sln ScratchHttpServer.sln add \
-  src/ScratchHttpServer/ScratchHttpServer.csproj \
+dotnet sln App.sln add \
+  src/App/App.csproj \
   --solution-folder src
 
-dotnet sln ScratchHttpServer.sln add \
-  tests/ScratchHttpServer.Tests/ScratchHttpServer.Tests.csproj \
+dotnet sln App.sln add \
+  tests/App.Tests/App.Tests.csproj \
   --solution-folder tests
 ```
 
@@ -66,41 +66,41 @@ The `--solution-folder` values are Visual Studio solution folders. They do not h
 **Add the test project reference**
 
 ```bash
-dotnet add tests/ScratchHttpServer.Tests/ScratchHttpServer.Tests.csproj \
-  reference src/ScratchHttpServer/ScratchHttpServer.csproj
+dotnet add tests/App.Tests/App.Tests.csproj \
+  reference src/App/App.csproj
 ```
 
 This produces the relationship:
 
 ```xml
-<ProjectReference Include="..\..\src\ScratchHttpServer\ScratchHttpServer.csproj" />
+<ProjectReference Include="..\..\src\App\App.csproj" />
 ```
 
 **Create your physical source folders**
 
 ```bash
 mkdir -p \
-  src/ScratchHttpServer/Application \
-  src/ScratchHttpServer/Network/Ethernet \
-  src/ScratchHttpServer/Network/Arp \
-  src/ScratchHttpServer/Network/Ipv4 \
-  src/ScratchHttpServer/Network/Icmp \
-  src/ScratchHttpServer/Network/Tcp \
-  src/ScratchHttpServer/Http \
-  src/ScratchHttpServer/Devices \
-  src/ScratchHttpServer/wwwroot \
-  tests/ScratchHttpServer.Tests/Network \
-  tests/ScratchHttpServer.Tests/Http \
-  tests/ScratchHttpServer.Tests/Fixtures
+  src/App/Application \
+  src/App/Network/Ethernet \
+  src/App/Network/Arp \
+  src/App/Network/Ipv4 \
+  src/App/Network/Icmp \
+  src/App/Network/Tcp \
+  src/App/Http \
+  src/App/Devices \
+  src/App/wwwroot \
+  tests/App.Tests/Network \
+  tests/App.Tests/Http \
+  tests/App.Tests/Fixtures
 ```
 
 The .NET SDK automatically includes `.cs` files recursively, so you do not need to add every new file to the project manually. For example, a file at:
 
 ```text
-src/ScratchHttpServer/Network/Tcp/TcpSegment.cs
+src/App/Network/Tcp/TcpSegment.cs
 ```
 
-is automatically compiled by ScratchHttpServer.csproj.
+is automatically compiled by App.csproj.
 
 **Configure the application project**
 
@@ -116,7 +116,7 @@ Your application `.csproj` should contain the equivalent of:
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>ScratchHttpServer</RootNamespace>
+    <RootNamespace>App</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -141,7 +141,7 @@ The test project can keep implicit usings enabled:
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ScratchHttpServer\ScratchHttpServer.csproj" />
+    <ProjectReference Include="..\..\src\App\App.csproj" />
   </ItemGroup>
 
 </Project>
@@ -153,20 +153,20 @@ The `dotnet new xunit` template will already add the xUnit package references.
 
 ```bash
 touch \
-  src/ScratchHttpServer/Application/HttpApplication.cs \
-  src/ScratchHttpServer/Network/RawNetworkStack.cs \
-  src/ScratchHttpServer/Network/Ethernet/EthernetFrame.cs \
-  src/ScratchHttpServer/Network/Arp/ArpPacket.cs \
-  src/ScratchHttpServer/Network/Ipv4/Ipv4Packet.cs \
-  src/ScratchHttpServer/Network/Icmp/IcmpPacket.cs \
-  src/ScratchHttpServer/Network/Tcp/TcpSegment.cs \
-  src/ScratchHttpServer/Devices/LinuxTapDevice.cs
+  src/App/Application/HttpApplication.cs \
+  src/App/Network/RawNetworkStack.cs \
+  src/App/Network/Ethernet/EthernetFrame.cs \
+  src/App/Network/Arp/ArpPacket.cs \
+  src/App/Network/Ipv4/Ipv4Packet.cs \
+  src/App/Network/Icmp/IcmpPacket.cs \
+  src/App/Network/Tcp/TcpSegment.cs \
+  src/App/Devices/LinuxTapDevice.cs
 ```
 
 A namespace layout matching those folders would be:
 
 ```csharp
-namespace ScratchHttpServer.Network.Tcp;
+namespace App.Network.Tcp;
 
 public sealed class TcpSegment
 {
@@ -176,10 +176,10 @@ public sealed class TcpSegment
 Or, if you prefer file-scoped namespaces grouped by subsystem:
 
 ```text
-ScratchHttpServer.Network.Tcp
-ScratchHttpServer.Network.Ipv4
-ScratchHttpServer.Http
-ScratchHttpServer.Devices
+App.Network.Tcp
+App.Network.Ipv4
+App.Http
+App.Devices
 ```
 
 **Verify the generated structure**
@@ -188,7 +188,7 @@ ScratchHttpServer.Devices
 dotnet restore
 dotnet build
 dotnet test
-dotnet sln ScratchHttpServer.sln list
+dotnet sln App.sln list
 ```
 
 These commands restore dependencies, compile both projects, run the tests, and confirm that both projects are registered in the solution.

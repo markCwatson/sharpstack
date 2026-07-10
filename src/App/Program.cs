@@ -1,7 +1,7 @@
-﻿using ScratchHttpServer.Network;
-using ScratchHttpServer.Device;
+﻿using App.Network;
+using App.Device;
 
-namespace ScratchHttpServer;
+namespace App;
 
 class Program
 {

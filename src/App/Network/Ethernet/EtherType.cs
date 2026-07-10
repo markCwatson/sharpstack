@@ -1,4 +1,4 @@
-namespace ScratchHttpServer.Network.Ethernet;
+namespace App.Network.Ethernet;
 
 public enum EtherType : ushort
 {

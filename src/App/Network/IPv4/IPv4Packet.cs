@@ -1,6 +1,6 @@
-using ScratchHttpServer.Network.Ethernet;
+using App.Network.Ethernet;
 
-namespace ScratchHttpServer.Network.IPv4;
+namespace App.Network.IPv4;
 
 public static class IPv4Packet
 {

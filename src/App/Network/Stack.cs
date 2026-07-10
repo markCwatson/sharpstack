@@ -1,8 +1,8 @@
-using ScratchHttpServer.Network.Ethernet;
-using ScratchHttpServer.Network.Arp;
-using ScratchHttpServer.Network.IPv4;
+using App.Network.Ethernet;
+using App.Network.Arp;
+using App.Network.IPv4;
 
-namespace ScratchHttpServer.Network;
+namespace App.Network;
 
 // the networking stack has to read the EthernetFrame.EtherType
 // then pass it to either the ARP handler or the IPv4 handler

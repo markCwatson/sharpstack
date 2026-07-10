@@ -1,4 +1,4 @@
-namespace ScratchHttpServer.Network.Ethernet;
+namespace App.Network.Ethernet;
 
 //// ethernet header is 14 bytes
 // destination mac: 6 bytes
