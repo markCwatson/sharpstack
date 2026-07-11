@@ -29,7 +29,7 @@ public record struct EthernetFrame(MacAddress Destination, MacAddress Source, us
         var bytes = new byte[14 + Payload.Length];
         Destination.CopyTo(bytes.AsSpan(0, 6));
         Source.CopyTo(bytes.AsSpan(6, 6));
-        ushort bigEndianEtherType = (ushort)((EtherType >> 8) | (EtherType & 0xff));
+        ushort bigEndianEtherType = (ushort)((EtherType >> 8) | (EtherType << 8));
         BitConverter.TryWriteBytes(bytes.AsSpan(12, 2), bigEndianEtherType);
         Payload.CopyTo(bytes.AsSpan(14));
         return bytes;

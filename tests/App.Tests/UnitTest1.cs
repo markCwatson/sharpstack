@@ -64,4 +64,34 @@ public class UnitTest1
 
         Assert.Equal(expected, bytes);
     }
+
+    [Fact]
+    public void EthernetFrame_ToBytes_WritesArpEtherTypeInNetworkOrder()
+    {
+        var frame = new EthernetFrame(
+            Destination: new MacAddress(0x02, 0x00, 0x00, 0x00, 0x00, 0x02),
+            Source: new MacAddress(0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF),
+            EtherType: (ushort)EtherType.ARP,
+            Payload: Array.Empty<byte>());
+
+        var bytes = frame.ToBytes();
+
+        Assert.Equal(0x08, bytes[12]);
+        Assert.Equal(0x06, bytes[13]);
+    }
+
+    [Fact]
+    public void EthernetFrame_Parse_ReadsNetworkOrderArpEtherType()
+    {
+        var bytes = new byte[]
+        {
+            0x02, 0x00, 0x00, 0x00, 0x00, 0x02,
+            0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF,
+            0x08, 0x06
+        };
+
+        var frame = EthernetFrame.Parse(bytes);
+
+        Assert.Equal(EtherType.ARP, frame.EtherTypeEnum);
+    }
 }
