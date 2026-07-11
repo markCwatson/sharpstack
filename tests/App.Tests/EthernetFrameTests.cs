@@ -2,7 +2,7 @@
 
 namespace App.Tests;
 
-public class UnitTest1
+public class EthernetFrameTests
 {
     [Fact]
     public void EthernetFrame_Parse_ReadsNetworkOrderIpv4EtherType()
