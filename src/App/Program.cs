@@ -1,6 +1,5 @@
 ﻿using App.Network;
 using App.Device;
-using App.Network.Ethernet;
 
 namespace App;
 
@@ -11,12 +10,8 @@ class Program
         var stack = new Stack();
         var device = new Tap();
 
+        // done like this so it can be unit tested
         while (true)
-        {
-            byte[] bytes = await device.ReadFrameAsync();
-            EthernetFrame? outgoing = await stack.HandleFrameAsync(bytes);
-            if (outgoing is not null)
-                await device.WriteFrameAsync(outgoing.Value);
-        }
+            await StackRunner.ProcessOneFrame(stack, device);
     }
 }

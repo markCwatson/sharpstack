@@ -1,5 +1,7 @@
 # http server in C#
 
+[![.NET tests](https://github.com/markCwatson/sharpstack/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/markCwatson/sharpstack/actions/workflows/tests.yml)
+
 This is a full networking stqack and minimal http server written in C#12/.NET10 without the use of `System.Net`. The only .NET types I am going to use is `System.IO` for sockets.
 
 All C# code is hand-written. Some documentation is written by AI/LLMs (this is to help guide me - but I may not follow it's suggestions exactly)

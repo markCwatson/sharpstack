@@ -46,7 +46,7 @@ public sealed class Tap : IDevice
     {
         byte[] buffer = new byte[2048];
         var numBytes = await _stream.ReadAsync(buffer);
-        return buffer.AsSpan(0, numBytes).ToArray();
+        return buffer[..numBytes];
     }
 
     public async Task WriteFrameAsync(EthernetFrame frame) => await _stream.WriteAsync(frame.ToBytes());
