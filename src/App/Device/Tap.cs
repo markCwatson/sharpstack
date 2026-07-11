@@ -38,7 +38,7 @@ public sealed class Tap : IDevice
             throw new IOException($"Could not configure TAP device {_name}. Error code: {Marshal.GetLastWin32Error()}, close returned: {error}");
         }
 
-        var handle = new SafeFileHandle((IntPtr)fileDescriptor, ownsHandle: true);
+        var handle = new SafeFileHandle(fileDescriptor, ownsHandle: true);
         _stream = new FileStream(handle, FileAccess.ReadWrite, bufferSize: 2048, isAsync: false);
     }
 
@@ -49,10 +49,7 @@ public sealed class Tap : IDevice
         return buffer.AsSpan(0, numBytes).ToArray();
     }
 
-    public async Task WriteFrameAsync(EthernetFrame frame)
-    {
-        await _stream.WriteAsync(frame.ToBytes());
-    }
+    public async Task WriteFrameAsync(EthernetFrame frame) => await _stream.WriteAsync(frame.ToBytes());
 
     // note : AI generated these DLL imports to be used in the ctor too
     [DllImport("libc", SetLastError = true)]

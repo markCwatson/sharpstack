@@ -19,3 +19,5 @@ curl http://10.0.0.2:8080/index.html
 and it will return the `html` file.
 
 Since I am using a TAP, it hast to be run on Linux.
+
+I will also get AI to write all the tests.
