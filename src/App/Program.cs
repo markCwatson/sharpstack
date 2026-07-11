@@ -14,8 +14,9 @@ class Program
         while (true)
         {
             byte[] bytes = await device.ReadFrameAsync();
-            EthernetFrame outgoing = await stack.HandleFrameAsync(bytes);
-            await device.WriteFrameAsync(outgoing);
+            EthernetFrame? outgoing = await stack.HandleFrameAsync(bytes);
+            if (outgoing is not null)
+                await device.WriteFrameAsync(outgoing.Value);
         }
     }
 }

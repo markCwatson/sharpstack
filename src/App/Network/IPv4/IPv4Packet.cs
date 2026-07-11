@@ -2,7 +2,7 @@ using App.Network.Ethernet;
 
 namespace App.Network.IPv4;
 
-public static class IPv4Packet
+public sealed record IPv4Packet
 {
     public static async Task<EthernetFrame> HandlePacket(EthernetFrame incoming)
     {

@@ -9,10 +9,13 @@ namespace App.Network;
 
 public sealed class Stack
 {
-    // this is the mac address of this stack
-    private readonly MacAddress _macAddress = new MacAddress(0x02, 0x00, 0x00, 0x00, 0x00, 0x02);
+    // this is the mac address and ip of this stack
+    public static MacAddress MacAddress { get; } = new MacAddress(0x02, 0x00, 0x00, 0x00, 0x00, 0x02);
+    public static Ipv4Address Ipv4Address { get; } = new Ipv4Address("10.0.0.2");
 
-    public async Task<EthernetFrame> HandleFrameAsync(byte[] bytes)
+    public static MacAddress BroadcastAddress { get; } = new MacAddress(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
+
+    public async Task<EthernetFrame?> HandleFrameAsync(byte[] bytes)
     {
         EthernetFrame incoming = EthernetFrame.Parse(bytes);
 

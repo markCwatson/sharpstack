@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+
 namespace App.Network.Ethernet;
 
 //// ethernet header is 14 bytes
@@ -17,8 +19,7 @@ public record struct EthernetFrame(MacAddress Destination, MacAddress Source, us
 
         var destination = new MacAddress(bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]);
         var source = new MacAddress(bytes[6], bytes[7], bytes[8], bytes[9], bytes[10], bytes[11]);
-        byte[] bigEndianEtherType = new byte[] { bytes[13], bytes[12] };
-        var etherType = BitConverter.ToUInt16(bigEndianEtherType);
+        ushort etherType = BinaryPrimitives.ReadUInt16BigEndian(bytes.AsSpan(12, 2));
         var payload = bytes[14..];
 
         return new EthernetFrame(destination, source, etherType, payload);
@@ -29,8 +30,7 @@ public record struct EthernetFrame(MacAddress Destination, MacAddress Source, us
         var bytes = new byte[14 + Payload.Length];
         Destination.CopyTo(bytes.AsSpan(0, 6));
         Source.CopyTo(bytes.AsSpan(6, 6));
-        ushort bigEndianEtherType = (ushort)((EtherType >> 8) | (EtherType << 8));
-        BitConverter.TryWriteBytes(bytes.AsSpan(12, 2), bigEndianEtherType);
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(12, 2), EtherType);
         Payload.CopyTo(bytes.AsSpan(14));
         return bytes;
     }
