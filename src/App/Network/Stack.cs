@@ -23,13 +23,7 @@ public sealed class Stack
         {
             EtherType.ARP => ArpPacket.HandlePacket(incoming),
             EtherType.IPv4 => await IPv4Packet.HandlePacket(incoming),
-            _ => HandleUnknown(incoming)
+            _ => null
         };
-    }
-
-    private EthernetFrame HandleUnknown(EthernetFrame incoming)
-    {
-        // todo: implement unknown frame handler
-        return incoming;
     }
 }

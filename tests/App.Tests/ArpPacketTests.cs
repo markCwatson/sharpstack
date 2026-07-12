@@ -37,10 +37,9 @@ public class ArpPacketTests
     }
 
     [Fact]
-    public void HandlePacket_ParsesNetworkOrderPayloadAndBuildsReply()
+    public void Parse_ReadsArpFieldsInNetworkByteOrder()
     {
-        var sender = new MacAddress(0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF);
-        var requestPayload = new byte[]
+        var payload = new byte[]
         {
             0x00, 0x01,
             0x08, 0x00,
@@ -52,30 +51,22 @@ public class ArpPacketTests
             0x02, 0x00, 0x00, 0x00, 0x00, 0x02,
             0x0A, 0x00, 0x00, 0x02
         };
-        var incoming = new EthernetFrame(
-            Destination: Stack.BroadcastAddress,
-            Source: sender,
-            EtherType: (ushort)EtherType.ARP,
-            Payload: requestPayload);
 
-        var response = ArpPacket.HandlePacket(incoming);
+        var packet = ArpPacket.Parse(payload);
 
-        Assert.NotNull(response);
-        Assert.Equal(sender, response.Value.Destination);
-        Assert.Equal(Stack.MacAddress, response.Value.Source);
-        Assert.Equal((ushort)EtherType.ARP, response.Value.EtherType);
-        Assert.Equal(new byte[]
-        {
-            0x00, 0x01,
-            0x08, 0x00,
-            0x06,
-            0x04,
-            0x00, 0x02,
-            0x02, 0x00, 0x00, 0x00, 0x00, 0x02,
-            0x0A, 0x00, 0x00, 0x02,
-            0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF,
-            0x0A, 0x00, 0x00, 0x01
-        }, response.Value.Payload);
+        Assert.Equal(0x0001, packet.HardwareType);
+        Assert.Equal(0x0800, packet.ProtocolType);
+        Assert.Equal(6, packet.HardwareSize);
+        Assert.Equal(4, packet.ProtocolSize);
+        Assert.Equal(1, packet.Opcode);
+        Assert.Equal(
+            new MacAddress(0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF),
+            packet.SenderMacAddress);
+        Assert.Equal(new Ipv4Address("10.0.0.1"), packet.SenderIpAddress);
+        Assert.Equal(
+            new MacAddress(0x02, 0x00, 0x00, 0x00, 0x00, 0x02),
+            packet.TargetMacAddress);
+        Assert.Equal(new Ipv4Address("10.0.0.2"), packet.TargetIpAddress);
     }
 
     [Fact]

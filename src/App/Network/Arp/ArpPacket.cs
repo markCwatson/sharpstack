@@ -23,7 +23,7 @@ public sealed record ArpPacket(ushort HardwareType,
                                MacAddress TargetMacAddress,
                                Ipv4Address TargetIpAddress)
 {
-    private static ArpPacket Parse(byte[] payload)
+    public static ArpPacket Parse(byte[] payload)
     {
         ushort hardwareType = BinaryPrimitives.ReadUInt16BigEndian(payload.AsSpan(0, 2));
         ushort protocolType = BinaryPrimitives.ReadUInt16BigEndian(payload.AsSpan(2, 2));
