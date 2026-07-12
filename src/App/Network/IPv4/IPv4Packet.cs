@@ -81,9 +81,28 @@ public sealed record IPv4Packet(byte Version,
 
         return packet.ProtocolEnum switch
         {
-            Ipv4Protocol.ICMP => await IcmpPacket.HandlePacket(packet),
-            //Ipv4Protocol.TCP => await TcpPacket.HandlePacket(packet),
+            Ipv4Protocol.ICMP => await IcmpPacket.HandlePacket(packet, incoming.Source, incoming.Destination),
+            //Ipv4Protocol.TCP => await TcpPacket.HandlePacket(packet, incoming.Source, incoming.Destination),
             _ => null
         };
+    }
+
+    public byte[] ToBytes()
+    {
+        byte[] buff = new byte[HeaderLength * 4 + Payload.Length];
+        buff[0] = (byte)((Version << 4) | HeaderLength);
+        buff[1] = TypeOfService;
+        BinaryPrimitives.WriteUInt16BigEndian(buff.AsSpan(2, 2), TotalLength);
+        BinaryPrimitives.WriteUInt16BigEndian(buff.AsSpan(4, 2), Identification);
+        BinaryPrimitives.WriteUInt16BigEndian(buff.AsSpan(6, 2), (ushort)((Flags << 13) | FragmentOffset));
+        buff[8] = TimeToLive;
+        buff[9] = Protocol;
+        BinaryPrimitives.WriteUInt16BigEndian(buff.AsSpan(10, 2), HeaderChecksum);
+        var sourceBytes = Source.ToArray();
+        sourceBytes.CopyTo(buff.AsSpan(12, 4));
+        var destinationBytes = Destination.ToArray();
+        destinationBytes.CopyTo(buff.AsSpan(16, 4));
+        Payload.CopyTo(buff.AsSpan(HeaderLength * 4));
+        return buff;
     }
 }

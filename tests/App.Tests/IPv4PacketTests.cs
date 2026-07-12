@@ -6,6 +6,60 @@ namespace App.Tests;
 public class IPv4PacketTests
 {
     [Fact]
+    public void ToBytes_WritesHeaderFieldsAndPayload()
+    {
+        var packet = new IPv4Packet(
+            Version: 4,
+            HeaderLength: 5,
+            TypeOfService: 0x10,
+            TotalLength: 24,
+            Identification: 0x1234,
+            Flags: 2,
+            FragmentOffset: 0,
+            TimeToLive: 64,
+            Protocol: 1,
+            HeaderChecksum: 0xABCD,
+            Source: new Ipv4Address("10.0.0.1"),
+            Destination: new Ipv4Address("10.0.0.2"),
+            Payload: new byte[] { 0x70, 0x69, 0x6E, 0x67 });
+
+        var bytes = packet.ToBytes();
+
+        Assert.Equal(new byte[]
+        {
+            // Version 4 and header length 5 words
+            0x45,
+
+            // Type of service
+            0x10,
+
+            // Total length: 24 bytes
+            0x00, 0x18,
+
+            // Identification
+            0x12, 0x34,
+
+            // Flags: 2, fragment offset: 0
+            0x40, 0x00,
+
+            // TTL and protocol: ICMP
+            0x40, 0x01,
+
+            // Header checksum
+            0xAB, 0xCD,
+
+            // Source: 10.0.0.1
+            0x0A, 0x00, 0x00, 0x01,
+
+            // Destination: 10.0.0.2
+            0x0A, 0x00, 0x00, 0x02,
+
+            // Payload
+            0x70, 0x69, 0x6E, 0x67
+        }, bytes);
+    }
+
+    [Fact]
     public void Parse_ReadsHeaderFieldsAndPayload()
     {
         var bytes = new byte[]

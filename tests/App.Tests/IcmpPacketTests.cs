@@ -5,6 +5,38 @@ namespace App.Tests;
 public class IcmpPacketTests
 {
     [Fact]
+    public void ToBytes_WritesFieldsInNetworkByteOrder()
+    {
+        var packet = new IcmpPacket(
+            Type: 0x08,
+            Code: 0x00,
+            Checksum: 0x06FA,
+            Identifier: 0x1234,
+            SequenceNumber: 0x0001,
+            Payload: new byte[] { 0x70, 0x69, 0x6E, 0x67 });
+
+        var bytes = packet.ToBytes();
+
+        Assert.Equal(new byte[]
+        {
+            // Type and code
+            0x08, 0x00,
+
+            // Checksum: 0x06FA
+            0x06, 0xFA,
+
+            // Identifier: 0x1234
+            0x12, 0x34,
+
+            // Sequence number: 0x0001
+            0x00, 0x01,
+
+            // Payload: "ping"
+            0x70, 0x69, 0x6E, 0x67
+        }, bytes);
+    }
+
+    [Fact]
     public void Parse_ReadsEchoRequestFieldsInNetworkByteOrder()
     {
         var bytes = new byte[]

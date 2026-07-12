@@ -1,6 +1,9 @@
 using App.Device;
 using App.Network;
 using App.Network.Ethernet;
+using App.Network.ICMP;
+using App.Network.IPv4;
+using App.Utils;
 
 namespace App.Tests;
 
@@ -120,31 +123,22 @@ public class StackTests
         Assert.Equal(sender, device.WrittenFrame.Value.Destination);
         Assert.Equal(Stack.MacAddress, device.WrittenFrame.Value.Source);
         Assert.Equal((ushort)EtherType.IPv4, device.WrittenFrame.Value.EtherType);
-        Assert.Equal(new byte[]
-        {
-            // IPv4 header: version, IHL, TOS, total length
-            0x45, 0x00, 0x00, 0x20,
 
-            // Identification, flags, and fragment offset
-            0x00, 0x00, 0x00, 0x00,
+        IPv4Packet response = IPv4Packet.Parse(device.WrittenFrame.Value.Payload);
 
-            // TTL, protocol (ICMP), header checksum
-            0x40, 0x01, 0x66, 0xDB,
+        Assert.Equal(new Ipv4Address("10.0.0.2"), response.Source);
+        Assert.Equal(new Ipv4Address("10.0.0.1"), response.Destination);
+        Assert.Equal((byte)Ipv4Protocol.ICMP, response.Protocol);
+        Assert.Equal((ushort)0x20, response.TotalLength);
+        Assert.Equal((ushort)0x0000, Checksum.Calculate(response.ToBytes().AsSpan(0, response.HeaderLength * 4).ToArray()));
 
-            // Source IP: 10.0.0.2
-            0x0A, 0x00, 0x00, 0x02,
+        IcmpPacket icmpResponse = IcmpPacket.Parse(response.Payload);
 
-            // Destination IP: 10.0.0.1
-            0x0A, 0x00, 0x00, 0x01,
-
-            // ICMP echo reply: type, code, checksum
-            0x00, 0x00, 0x0E, 0xFA,
-
-            // Identifier and sequence number are preserved
-            0x12, 0x34, 0x00, 0x01,
-
-            // Payload: "ping"
-            0x70, 0x69, 0x6E, 0x67
-        }, device.WrittenFrame.Value.Payload);
+        Assert.Equal((byte)IcmpType.EchoReply, icmpResponse.Type);
+        Assert.Equal((byte)IcmpCode.EchoReply, icmpResponse.Code);
+        Assert.Equal((ushort)0x1234, icmpResponse.Identifier);
+        Assert.Equal((ushort)0x0001, icmpResponse.SequenceNumber);
+        Assert.Equal(new byte[] { 0x70, 0x69, 0x6E, 0x67 }, icmpResponse.Payload);
+        Assert.Equal((ushort)0x0000, Checksum.Calculate(response.Payload));
     }
 }
