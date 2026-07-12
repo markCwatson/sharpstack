@@ -71,6 +71,8 @@ public sealed record IcmpPacket(byte Type, byte Code, ushort Checksum, ushort Id
         ushort ipv4WrapChecksum = Utils.Checksum.Calculate(inBytes);
         ipv4Wrap = ipv4Wrap with { HeaderChecksum = ipv4WrapChecksum };
 
+        Console.WriteLine($"Sending ICMP echo reply to {packet.Source} from {packet.Destination}");
+
         return new EthernetFrame(
             // destination mac
             sourceMac,
