@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using App.Network.Ethernet;
 using App.Network.ICMP;
+using App.Network.Tcp;
 
 namespace App.Network.IPv4;
 
@@ -82,7 +83,7 @@ public sealed record IPv4Packet(byte Version,
         return packet.ProtocolEnum switch
         {
             Ipv4Protocol.ICMP => await IcmpPacket.HandlePacket(packet, incoming.Source, incoming.Destination),
-            //Ipv4Protocol.TCP => await TcpPacket.HandlePacket(packet, incoming.Source, incoming.Destination),
+            Ipv4Protocol.TCP => await TcpPacket.HandlePacket(packet, incoming.Source, incoming.Destination),
             _ => null
         };
     }
