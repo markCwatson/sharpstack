@@ -16,6 +16,7 @@ public sealed class TcpServer
 
     public async Task<EthernetFrame?> HandlePacket(IPv4Packet ipv4Packet, MacAddress sourceMac, MacAddress destinationMac)
     {
+        Console.WriteLine($"Received IPv4 packet from {ipv4Packet.Source} to {ipv4Packet.Destination} with protocol {ipv4Packet.Protocol}");
         TcpPacket tcpPacket = TcpPacket.Parse(ipv4Packet.Payload);
 
         if (!_listeners.TryGetValue(tcpPacket.DestinationPort, out IApplication? listener) || listener is null)
