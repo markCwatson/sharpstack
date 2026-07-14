@@ -51,7 +51,7 @@ public sealed class TcpConnection
         return null;
     }
 
-    private EthernetFrame CreateEthernetFrame(IPv4Packet ipv4Packet, TcpPacket packet, MacAddress sourceMac, MacAddress destinationMac)
+    public EthernetFrame CreateEthernetFrame(IPv4Packet ipv4Packet, TcpPacket packet, MacAddress sourceMac, MacAddress destinationMac)
     {
         var res = new TcpPacket(
                 packet.DestinationPort,
