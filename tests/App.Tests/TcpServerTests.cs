@@ -54,14 +54,8 @@ public class TcpServerTests
 
         Assert.NotNull(synAck);
         Assert.Equal(2, application.Requests.Count);
-        Assert.Equal(firstRequestSegment.Port, application.Requests[0].Packet.Port);
-        Assert.Equal(firstRequestSegment.DestinationPort, application.Requests[0].Packet.DestinationPort);
-        Assert.Equal(firstRequestSegment.Payload, application.Requests[0].Packet.Payload);
-        Assert.Equal(new byte[] { 0x47, 0x45 }, application.Requests[0].BufferedData);
-        Assert.Equal(secondRequestSegment.Port, application.Requests[1].Packet.Port);
-        Assert.Equal(secondRequestSegment.DestinationPort, application.Requests[1].Packet.DestinationPort);
-        Assert.Equal(secondRequestSegment.Payload, application.Requests[1].Packet.Payload);
-        Assert.Equal(new byte[] { 0x47, 0x45, 0x54 }, application.Requests[1].BufferedData);
+        Assert.Equal(new byte[] { 0x47, 0x45 }, application.Requests[0]);
+        Assert.Equal(new byte[] { 0x47, 0x45, 0x54 }, application.Requests[1]);
     }
 
     private static MacAddress PeerMac { get; } = new MacAddress(0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF);
@@ -76,11 +70,11 @@ public class TcpServerTests
 
     private sealed class RecordingApplication : IApplication
     {
-        public List<(TcpPacket Packet, byte[] BufferedData)> Requests { get; } = [];
+        public List<byte[]> Requests { get; } = [];
 
-        public Task<byte[]> HandleRequestAsync(TcpConnection connection, TcpPacket packet)
+        public Task<byte[]> HandleRequestAsync(TcpConnection connection)
         {
-            Requests.Add((packet, connection.GetReceivedData()));
+            Requests.Add(connection.GetReceivedData());
             return Task.FromResult(Array.Empty<byte>());
         }
     }

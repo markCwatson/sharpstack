@@ -31,7 +31,7 @@ public sealed class TcpServer
 
         conn.ReceiveData(tcpPacket.Payload);
 
-        byte[] response = await listener.HandleRequestAsync(conn, tcpPacket);
+        byte[] response = await listener.HandleRequestAsync(conn);
 
         // return ethernet frame
         return null;

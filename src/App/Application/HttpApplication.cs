@@ -6,7 +6,7 @@ public sealed class HttpApplication : IApplication
 {
     // will need a wey to read files from disk
 
-    public Task<byte[]> HandleRequestAsync(TcpConnection conn, TcpPacket tcpPacket)
+    public Task<byte[]> HandleRequestAsync(TcpConnection conn)
     {
         // read data from the connection
 
