@@ -10,6 +10,12 @@ public sealed class HttpApplication : IApplication
     {
         // read data from the connection
 
+        byte[] bytes = conn.GetReceivedData();
+        foreach (byte b in bytes)
+        {
+            Console.Write((char)b);
+        }
+
         // wait until we have the complte header which ends in \r\n\r\n
 
         // convert bytes to text 
