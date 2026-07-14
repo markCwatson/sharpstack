@@ -24,7 +24,7 @@ public sealed class TcpConnection
 
     public EthernetFrame? UpdateState(IPv4Packet ipv4Packet, TcpPacket tcpPacket, MacAddress remoteMac)
     {
-        if (_state == TcpState.Listen && tcpPacket.Flags == (byte)TcpFlag.SYN)
+        if (_state == TcpState.Listen && (tcpPacket.Flags & (byte)TcpFlag.SYN) != 0)
         {
             _state = TcpState.SynReceived;
             _acknowledgmentNumber = tcpPacket.SequenceNumber + 1;
