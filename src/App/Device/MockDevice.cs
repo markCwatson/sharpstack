@@ -12,12 +12,12 @@ public sealed class MockDevice : IDevice
         _data = data;
     }
 
-    public Task<byte[]> ReadFrameAsync()
+    public Task<byte[]> ReadEthernetFrameAsync()
     {
         return Task.FromResult(_data);
     }
 
-    public Task WriteFrameAsync(EthernetFrame frame)
+    public Task WriteEthernetFrameAsync(EthernetFrame frame)
     {
         WrittenFrame = frame;
         return Task.CompletedTask;

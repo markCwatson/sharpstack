@@ -7,11 +7,11 @@ namespace App;
 public sealed class StackRunner
 {
     // this method is used in the unit tests to process one frame at a time
-    public static async Task ProcessOneFrame(Stack stack, IDevice device)
+    public static async Task ProcessOneEthernetFrame(Stack stack, IDevice device)
     {
-        byte[] bytes = await device.ReadFrameAsync();
-        EthernetFrame? outgoing = await stack.HandleFrameAsync(bytes);
+        byte[] bytes = await device.ReadEthernetFrameAsync();
+        EthernetFrame? outgoing = await stack.HandleEthernetFrameAsync(bytes);
         if (outgoing is not null)
-            await device.WriteFrameAsync(outgoing.Value);
+            await device.WriteEthernetFrameAsync(outgoing.Value);
     }
 }

@@ -21,7 +21,7 @@ public sealed record ArpPacket(ushort HardwareType,
                                MacAddress SenderMacAddress,
                                Ipv4Address SenderIpAddress,
                                MacAddress TargetMacAddress,
-                               Ipv4Address TargetIpAddress)
+                               Ipv4Address TargetIpAddress) : IPacket<ArpPacket>
 {
     public static ArpPacket Parse(byte[] payload)
     {
@@ -69,32 +69,5 @@ public sealed record ArpPacket(ushort HardwareType,
         bytes[26] = targetIpArray[2];
         bytes[27] = targetIpArray[3];
         return bytes;
-    }
-
-    public static EthernetFrame? HandlePacket(EthernetFrame incoming)
-    {
-        ArpPacket parsed = Parse(incoming.Payload);
-
-        if (parsed.Opcode != 1 || !parsed.TargetIpAddress.Equals(Stack.Ipv4Address))
-            return null;
-
-        ArpPacket response = new ArpPacket(
-            HardwareType: parsed.HardwareType,
-            ProtocolType: parsed.ProtocolType,
-            HardwareSize: parsed.HardwareSize,
-            ProtocolSize: parsed.ProtocolSize,
-            Opcode: 2, // reply
-            SenderMacAddress: Stack.MacAddress,
-            SenderIpAddress: parsed.TargetIpAddress,
-            TargetMacAddress: parsed.SenderMacAddress,
-            TargetIpAddress: parsed.SenderIpAddress
-        );
-
-        return new EthernetFrame(
-            Destination: incoming.Source,
-            Source: Stack.MacAddress,
-            EtherType: (ushort)EtherType.ARP,
-            Payload: response.ToBytes()
-        );
     }
 }

@@ -8,7 +8,10 @@ namespace App.Network.Ethernet;
 // ether type: 2 bytes
 // payload: variable length
 
-public record struct EthernetFrame(MacAddress Destination, MacAddress Source, ushort EtherType, byte[] Payload)
+public record struct EthernetFrame(MacAddress Destination,
+                                   MacAddress Source,
+                                   ushort EtherType,
+                                   byte[] Payload) : IPacket<EthernetFrame>
 {
     public EtherType EtherTypeEnum => (EtherType)EtherType;
 

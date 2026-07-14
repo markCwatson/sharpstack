@@ -49,7 +49,7 @@ public class StackTests
         var device = new MockDevice(request.ToBytes());
         var stack = new Stack();
 
-        await StackRunner.ProcessOneFrame(stack, device);
+        await StackRunner.ProcessOneEthernetFrame(stack, device);
 
         Assert.NotNull(device.WrittenFrame);
         Assert.Equal(sender, device.WrittenFrame.Value.Destination);
@@ -117,7 +117,7 @@ public class StackTests
         var device = new MockDevice(request.ToBytes());
         var stack = new Stack();
 
-        await StackRunner.ProcessOneFrame(stack, device);
+        await StackRunner.ProcessOneEthernetFrame(stack, device);
 
         Assert.NotNull(device.WrittenFrame);
         Assert.Equal(sender, device.WrittenFrame.Value.Destination);

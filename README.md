@@ -17,7 +17,7 @@ ping 10.0.0.2
 and i will receive an ICMP echo response, and this
 
 ```shell
-curl http://10.0.0.2:8080/index.html
+curl http://10.0.0.2:80/index.html
 ```
 
 and it will return the `html` file.

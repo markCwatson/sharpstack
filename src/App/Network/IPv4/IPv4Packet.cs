@@ -1,7 +1,5 @@
 using System.Buffers.Binary;
 using App.Network.Ethernet;
-using App.Network.ICMP;
-using App.Network.Tcp;
 
 namespace App.Network.IPv4;
 
@@ -30,7 +28,7 @@ public sealed record IPv4Packet(byte Version,
                                 ushort HeaderChecksum,
                                 Ipv4Address Source,
                                 Ipv4Address Destination,
-                                byte[] Payload)
+                                byte[] Payload) : IPacket<IPv4Packet>
 {
 
     public Ipv4Protocol ProtocolEnum => (Ipv4Protocol)Protocol;
@@ -71,21 +69,6 @@ public sealed record IPv4Packet(byte Version,
             destination,
             payload
         );
-    }
-
-    public static async Task<EthernetFrame?> HandlePacket(EthernetFrame incoming)
-    {
-        IPv4Packet packet = Parse(incoming.Payload);
-
-        if (packet.Destination != Stack.Ipv4Address)
-            return null;
-
-        return packet.ProtocolEnum switch
-        {
-            Ipv4Protocol.ICMP => await IcmpPacket.HandlePacket(packet, incoming.Source, incoming.Destination),
-            Ipv4Protocol.TCP => await TcpPacket.HandlePacket(packet, incoming.Source, incoming.Destination),
-            _ => null
-        };
     }
 
     public byte[] ToBytes()

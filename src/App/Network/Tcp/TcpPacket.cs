@@ -1,5 +1,6 @@
 using App.Network.Ethernet;
 using App.Network.IPv4;
+using App.Application;
 using System.Buffers.Binary;
 
 namespace App.Network.Tcp;
@@ -9,47 +10,68 @@ namespace App.Network.Tcp;
 // Destination port - 2 bytes
 // Sequence number - 4 bytes
 // Acknowledgment number - 4 bytes
-// Flags - 2 bytes (URG, ACK, PSH, RST, SYN, FIN)
+// Data offset and flags - 2 bytes (URG, ACK, PSH, RST, SYN, FIN)
 // Window size - 2 bytes
 // Checksum - 2 bytes
 // Urgent pointer - 2 bytes
 // TCP payload
-public sealed record TcpPacket(ushort Port, ushort DestinationPort, uint SequenceNumber, uint AcknowledgmentNumber, ushort Flags, ushort WindowSize, ushort Checksum, ushort UrgentPointer, byte[] Payload)
+public sealed record TcpPacket(ushort Port,
+                               ushort DestinationPort,
+                               uint SequenceNumber,
+                               uint AcknowledgmentNumber,
+                               ushort DataOffset,
+                               byte Flags,
+                               ushort WindowSize,
+                               ushort Checksum,
+                               ushort UrgentPointer,
+                               byte[] Payload) : IPacket<TcpPacket>
 {
     public static TcpPacket Parse(byte[] bytes)
     {
         if (bytes.Length < 20)
             throw new ArgumentException("TCP packet must be at least 20 bytes long.");
 
+        ushort dataOffsetAndFlags = BinaryPrimitives.ReadUInt16BigEndian(bytes.AsSpan(12, 2));
+        ushort dataOffset = (ushort)(dataOffsetAndFlags >> 12);
+        byte flags = (byte)(dataOffsetAndFlags & 0x0FFF);
+
+        if (dataOffset < 5)
+            throw new ArgumentException("TCP data offset must be at least 5.");
+
+        int headerLength = dataOffset * 4;
+
+        if (headerLength > bytes.Length)
+            throw new ArgumentException("TCP header extends beyond packet.");
+
         return new TcpPacket(
             BinaryPrimitives.ReadUInt16BigEndian(bytes.AsSpan(0, 2)),
             BinaryPrimitives.ReadUInt16BigEndian(bytes.AsSpan(2, 2)),
             BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(4, 4)),
             BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(8, 4)),
-            BinaryPrimitives.ReadUInt16BigEndian(bytes.AsSpan(12, 2)),
+            dataOffset,
+            flags,
             BinaryPrimitives.ReadUInt16BigEndian(bytes.AsSpan(14, 2)),
             BinaryPrimitives.ReadUInt16BigEndian(bytes.AsSpan(16, 2)),
             BinaryPrimitives.ReadUInt16BigEndian(bytes.AsSpan(18, 2)),
-            bytes[20..]
+            bytes[headerLength..]
         );
     }
 
-    public static async Task<EthernetFrame?> HandlePacket(IPv4Packet packet, MacAddress sourceMac, MacAddress destinationMac)
+    public byte[] ToBytes()
     {
-        // parse: TcpPacket
+        var bytes = new byte[DataOffset * 4 + Payload.Length];
 
-        // create a key based on the source ip and source port (or use a four-tuple?)
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(0, 2), Port);
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(2, 2), DestinationPort);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(4, 4), SequenceNumber);
+        BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(8, 4), AcknowledgmentNumber);
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(12, 2), (ushort)((DataOffset << 12) | (Flags & 0x0FFF)));
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(14, 2), WindowSize);
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(16, 2), Checksum);
+        BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(18, 2), UrgentPointer);
 
-        // check if there is an existing connection for that key (a TcpConnection class)
-        /// connection state machine? reorder packets?
+        Array.Copy(Payload, 0, bytes, DataOffset * 4, Payload.Length);
 
-        //  use connection to do what? pass to next layer like http ?
-        //// we will use the Destination port to determine what to do with the packet
-        //// let's use an interface listeners of IApplication 
-
-        // get response from next layer, wrap in tcp packet, wrap in ipv4 packet, wrap in ethernet frame 
-
-        // return ethernet frame
-        return null;
+        return bytes;
     }
 }

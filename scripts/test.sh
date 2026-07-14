@@ -7,6 +7,6 @@ echo " "
 sleep 3
 
 echo "curling"
-echo "curl -i http://10.0.0.2:8080/index.html"
+echo "curl -i http://10.0.0.2:80/index.html"
 sleep 1
-curl -i http://10.0.0.2:8080/index.html
+curl -i http://10.0.0.2:80/index.html

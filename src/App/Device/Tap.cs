@@ -42,14 +42,14 @@ public sealed class Tap : IDevice
         _stream = new FileStream(handle, FileAccess.ReadWrite, bufferSize: 2048, isAsync: false);
     }
 
-    public async Task<byte[]> ReadFrameAsync()
+    public async Task<byte[]> ReadEthernetFrameAsync()
     {
         byte[] buffer = new byte[2048];
         var numBytes = await _stream.ReadAsync(buffer);
         return buffer[..numBytes];
     }
 
-    public async Task WriteFrameAsync(EthernetFrame frame) => await _stream.WriteAsync(frame.ToBytes());
+    public async Task WriteEthernetFrameAsync(EthernetFrame frame) => await _stream.WriteAsync(frame.ToBytes());
 
     // note : AI generated these DLL imports to be used in the ctor too
     [DllImport("libc", SetLastError = true)]

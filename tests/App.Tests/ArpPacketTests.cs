@@ -70,7 +70,7 @@ public class ArpPacketTests
     }
 
     [Fact]
-    public void HandlePacket_ArpRequestWithUnknownTargetMac_ReturnsReply()
+    public void StackHandleArpPacket_ArpRequestWithUnknownTargetMac_ReturnsReply()
     {
         var sender = new MacAddress(0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF);
         var requestPayload = new byte[]
@@ -91,7 +91,7 @@ public class ArpPacketTests
             EtherType: (ushort)EtherType.ARP,
             Payload: requestPayload);
 
-        var response = ArpPacket.HandlePacket(incoming);
+        var response = Stack.HandleArpPacket(incoming);
 
         Assert.NotNull(response);
         Assert.Equal(sender, response.Value.Destination);
@@ -111,7 +111,7 @@ public class ArpPacketTests
     }
 
     [Fact]
-    public void HandlePacket_ArpReply_DoesNotGenerateAnotherReply()
+    public void StackHandleArpPacket_ArpReply_DoesNotGenerateAnotherReply()
     {
         var replyPayload = new byte[]
         {
@@ -131,7 +131,7 @@ public class ArpPacketTests
             EtherType: (ushort)EtherType.ARP,
             Payload: replyPayload);
 
-        var response = ArpPacket.HandlePacket(incoming);
+        var response = Stack.HandleArpPacket(incoming);
 
         Assert.Null(response);
     }

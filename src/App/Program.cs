@@ -1,5 +1,6 @@
 ﻿using App.Network;
 using App.Device;
+using App.Application;
 
 namespace App;
 
@@ -10,8 +11,12 @@ class Program
         var stack = new Stack();
         var device = new Tap();
 
+        // create and register applications
+        IApplication http = new HttpApplication();
+        stack.RegisterTcpListener(80, http);
+
         // done like this so it can be unit tested
         while (true)
-            await StackRunner.ProcessOneFrame(stack, device);
+            await StackRunner.ProcessOneEthernetFrame(stack, device);
     }
 }
