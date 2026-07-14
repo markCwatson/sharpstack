@@ -18,21 +18,39 @@ public sealed class TcpServer
     {
         Console.WriteLine($"Received IPv4 packet from {ipv4Packet.Source} to {ipv4Packet.Destination} with protocol {ipv4Packet.Protocol}");
         TcpPacket tcpPacket = TcpPacket.Parse(ipv4Packet.Payload);
+        Console.WriteLine($"TCP packet {tcpPacket.Port} -> {tcpPacket.DestinationPort}, flags=0x{tcpPacket.Flags:X2}, seq={tcpPacket.SequenceNumber}, ack={tcpPacket.AcknowledgmentNumber}, payload={tcpPacket.Payload.Length} bytes");
 
         if (!_listeners.TryGetValue(tcpPacket.DestinationPort, out IApplication? listener) || listener is null)
+        {
+            Console.WriteLine($"No TCP listener is registered for port {tcpPacket.DestinationPort}");
             return null;
+        }
+
+        Console.WriteLine($"TCP listener found for port {tcpPacket.DestinationPort}");
 
         TcpConnection conn = GetOrCreateTcpConnection(ipv4Packet.Source, ipv4Packet.Destination, tcpPacket.Port, tcpPacket.DestinationPort);
         EthernetFrame? res = conn.UpdateState(ipv4Packet, tcpPacket, sourceMac);
+        Console.WriteLine($"TCP connection state after packet: established={conn.IsEstablished}, response={(res is not null ? "generated" : "none")}");
         if (res is not null)
             return res;
 
-        if (!conn.IsEstablished || tcpPacket.Payload.Length == 0)
+        if (!conn.IsEstablished)
+        {
+            Console.WriteLine("TCP payload was not dispatched because the connection is not established");
             return null;
+        }
+
+        if (tcpPacket.Payload.Length == 0)
+        {
+            Console.WriteLine("TCP connection is established, but this packet has no payload");
+            return null;
+        }
 
         conn.ReceiveData(tcpPacket.Payload);
+        Console.WriteLine($"Dispatching {tcpPacket.Payload.Length} payload bytes to the application");
 
         byte[] response = await listener.HandleRequestAsync(conn);
+        Console.WriteLine($"Application returned {response.Length} response bytes");
 
         // return ethernet frame
         return null;

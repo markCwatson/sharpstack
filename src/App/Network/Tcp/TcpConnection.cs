@@ -24,20 +24,29 @@ public sealed class TcpConnection
 
     public EthernetFrame? UpdateState(IPv4Packet ipv4Packet, TcpPacket tcpPacket, MacAddress remoteMac)
     {
+        Console.WriteLine($"TCP state before packet: {_state}; flags=0x{tcpPacket.Flags:X2}, seq={tcpPacket.SequenceNumber}, ack={tcpPacket.AcknowledgmentNumber}");
+
         if (_state == TcpState.Listen && (tcpPacket.Flags & (byte)TcpFlag.SYN) != 0)
         {
             _state = TcpState.SynReceived;
             _acknowledgmentNumber = tcpPacket.SequenceNumber + 1;
+            Console.WriteLine($"TCP SYN accepted; sending SYN-ACK with seq={_sequenceNumber}, ack={_acknowledgmentNumber}");
             return CreateEthernetFrame(ipv4Packet, tcpPacket, Stack.MacAddress, remoteMac);
         }
         else if (_state == TcpState.SynReceived && (tcpPacket.Flags & (byte)TcpFlag.ACK) != 0 && tcpPacket.AcknowledgmentNumber == _sequenceNumber + 1)
         {
             _sequenceNumber++;
             _state = TcpState.Established;
+            Console.WriteLine("TCP final handshake ACK accepted; connection established");
+        }
+        else if (_state == TcpState.SynReceived && (tcpPacket.Flags & (byte)TcpFlag.ACK) != 0)
+        {
+            Console.WriteLine($"TCP ACK did not establish connection; expected ack={_sequenceNumber + 1}");
         }
         else if (_state == TcpState.Established && (tcpPacket.Flags & (byte)TcpFlag.FIN) != 0)
         {
             _state = TcpState.CloseWait;
+            Console.WriteLine("TCP FIN received; connection moved to CloseWait");
         }
 
         if (tcpPacket.Payload.Length > 0 || (tcpPacket.Flags & (byte)TcpFlag.FIN) != 0)

@@ -11,10 +11,8 @@ public sealed class HttpApplication : IApplication
         // read data from the connection
 
         byte[] bytes = conn.GetReceivedData();
-        foreach (byte b in bytes)
-        {
-            Console.Write((char)b);
-        }
+        Console.WriteLine($"HttpApplication.HandleRequestAsync entered with {bytes.Length} bytes");
+        Console.WriteLine($"HTTP request bytes: {System.Text.Encoding.ASCII.GetString(bytes)}");
 
         // wait until we have the complte header which ends in \r\n\r\n
 
