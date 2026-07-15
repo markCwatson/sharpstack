@@ -35,11 +35,19 @@ public sealed class TcpServer
         if (res is not null)
             return res;
 
+        if (conn.IsClosed)
+        {
+            Console.WriteLine("Closing TCP connection; no further payload will be dispatched");
+            _tcpConnections.Remove((ipv4Packet.Source, ipv4Packet.Destination, tcpPacket.Port, tcpPacket.DestinationPort));
+            return null;
+        }
+
         if (!conn.IsEstablished)
         {
             Console.WriteLine("TCP payload was not dispatched because the connection is not established");
             return null;
         }
+
 
         if (tcpPacket.Payload.Length == 0)
         {

@@ -8,6 +8,7 @@ public sealed class TcpConnection
 {
     private TcpState _state = TcpState.Listen;
     public bool IsEstablished => _state == TcpState.Established;
+    public bool IsClosed => _state == TcpState.Closed;
     private uint _sequenceNumber = 10_000;
     private uint _acknowledgmentNumber;
     private readonly List<byte> _receivedData = new();
@@ -45,17 +46,17 @@ public sealed class TcpConnection
         {
             Console.WriteLine($"TCP ACK did not establish connection; expected ack={_sequenceNumber + 1}");
         }
-        else if ((_state == TcpState.Established || _state == TcpState.CloseWait) && finReceived)
+        else if (_state == TcpState.Established && finReceived)
         {
-            if (_state == TcpState.Established)
-            {
-                _state = TcpState.CloseWait;
-                Console.WriteLine("TCP FIN received; connection moved to CloseWait");
-            }
-            else
-            {
-                Console.WriteLine("TCP FIN retransmission received while in CloseWait");
-            }
+            _state = TcpState.CloseWait;
+            Console.WriteLine("TCP FIN received; connection moved to CloseWait");
+        }
+        else if (_state == TcpState.LastAck &&
+                 (tcpPacket.Flags & (byte)TcpFlag.ACK) != 0 &&
+                 tcpPacket.AcknowledgmentNumber == _sequenceNumber)
+        {
+            _state = TcpState.Closed;
+            Console.WriteLine("TCP final ACK received; connection closed");
         }
 
         if (tcpPacket.SequenceNumber == _acknowledgmentNumber)
@@ -68,7 +69,15 @@ public sealed class TcpConnection
 
         if (finReceived && _state == TcpState.CloseWait)
         {
-            Console.WriteLine($"TCP FIN acknowledged with ack={_acknowledgmentNumber}");
+            Console.WriteLine($"TCP FIN acknowledged; sending FIN-ACK with seq={_sequenceNumber}, ack={_acknowledgmentNumber}");
+            EthernetFrame response = CreateFinAcknowledgmentFrame(ipv4Packet, tcpPacket, Stack.MacAddress, remoteMac);
+            _state = TcpState.LastAck;
+            return response;
+        }
+
+        if (finReceived && _state == TcpState.LastAck)
+        {
+            Console.WriteLine($"TCP duplicate FIN acknowledged while waiting for final ACK={_sequenceNumber}");
             return CreateAcknowledgmentFrame(ipv4Packet, tcpPacket, Stack.MacAddress, remoteMac);
         }
 
@@ -95,6 +104,19 @@ public sealed class TcpConnection
             destinationMac,
             (byte)TcpFlag.ACK,
             Array.Empty<byte>());
+    }
+
+    public EthernetFrame CreateFinAcknowledgmentFrame(IPv4Packet ipv4Packet, TcpPacket packet, MacAddress sourceMac, MacAddress destinationMac)
+    {
+        EthernetFrame response = CreateTcpFrame(
+            ipv4Packet,
+            packet,
+            sourceMac,
+            destinationMac,
+            (byte)(TcpFlag.FIN | TcpFlag.ACK),
+            Array.Empty<byte>());
+        _sequenceNumber++;
+        return response;
     }
 
     public EthernetFrame CreateResponseFrame(IPv4Packet ipv4Packet, TcpPacket packet, MacAddress sourceMac, MacAddress destinationMac, byte[] payload)
