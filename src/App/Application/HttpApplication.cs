@@ -1,3 +1,4 @@
+using System.Text;
 using App.Network.Tcp;
 
 namespace App.Application;
@@ -8,20 +9,34 @@ public sealed class HttpApplication : IApplication
 
     public Task<byte[]> HandleRequestAsync(TcpConnection conn)
     {
-        // read data from the connection
-
         byte[] bytes = conn.GetReceivedData();
         Console.WriteLine($"HttpApplication.HandleRequestAsync entered with {bytes.Length} bytes");
-        Console.WriteLine($"HTTP request bytes: {System.Text.Encoding.ASCII.GetString(bytes)}");
+        Console.WriteLine($"HTTP request bytes: {Encoding.ASCII.GetString(bytes)}");
 
-        // wait until we have the complte header which ends in \r\n\r\n
+        string request = Encoding.ASCII.GetString(bytes);
+        int headerEnd = request.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+        if (headerEnd < 0)
+            return Task.FromResult(Array.Empty<byte>());
 
-        // convert bytes to text 
+        int requestLineEnd = request.IndexOf("\r\n", StringComparison.Ordinal);
+        string requestLine = request[..requestLineEnd];
+        string[] requestParts = requestLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (requestParts.Length < 2)
+            return Task.FromResult(CreateResponse("400 Bad Request", "Bad Request\n"));
 
-        // split by \r\n to get the first line, then split by space to get the method and path
+        if (requestParts[0] != "GET")
+            return Task.FromResult(CreateResponse("405 Method Not Allowed", "Method Not Allowed\n"));
 
-        // should we handle more than the GET method?
+        if (requestParts[1] != "/")
+            return Task.FromResult(CreateResponse("404 Not Found", "Not Found\n"));
 
-        return Task.FromResult(Array.Empty<byte>());
+        return Task.FromResult(CreateResponse("200 OK", "Hello from sharpstack!\n"));
+    }
+
+    private static byte[] CreateResponse(string status, string body)
+    {
+        byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
+        string headers = $"HTTP/1.1 {status}\r\nContent-Length: {bodyBytes.Length}\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\r\n";
+        return Encoding.ASCII.GetBytes(headers).Concat(bodyBytes).ToArray();
     }
 }

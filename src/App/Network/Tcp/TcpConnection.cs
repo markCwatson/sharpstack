@@ -11,6 +11,7 @@ public sealed class TcpConnection
     private uint _sequenceNumber = 10_000;
     private uint _acknowledgmentNumber;
     private readonly List<byte> _receivedData = new();
+    public uint NextExpectedSequenceNumber => _acknowledgmentNumber;
 
     // steam-like interface for tcp server to read data and the application to consume it
     public byte[] GetReceivedData() => _receivedData.ToArray();
@@ -49,9 +50,9 @@ public sealed class TcpConnection
             Console.WriteLine("TCP FIN received; connection moved to CloseWait");
         }
 
-        if (tcpPacket.Payload.Length > 0 || (tcpPacket.Flags & (byte)TcpFlag.FIN) != 0)
+        if (tcpPacket.SequenceNumber == _acknowledgmentNumber)
         {
-            _acknowledgmentNumber = tcpPacket.SequenceNumber + (uint)tcpPacket.Payload.Length;
+            _acknowledgmentNumber += (uint)tcpPacket.Payload.Length;
 
             if ((tcpPacket.Flags & (byte)TcpFlag.FIN) != 0)
                 _acknowledgmentNumber++;
@@ -62,17 +63,58 @@ public sealed class TcpConnection
 
     public EthernetFrame CreateEthernetFrame(IPv4Packet ipv4Packet, TcpPacket packet, MacAddress sourceMac, MacAddress destinationMac)
     {
+        return CreateTcpFrame(
+            ipv4Packet,
+            packet,
+            sourceMac,
+            destinationMac,
+            (byte)(TcpFlag.SYN | TcpFlag.ACK),
+            Array.Empty<byte>());
+    }
+
+    public EthernetFrame CreateAcknowledgmentFrame(IPv4Packet ipv4Packet, TcpPacket packet, MacAddress sourceMac, MacAddress destinationMac)
+    {
+        return CreateTcpFrame(
+            ipv4Packet,
+            packet,
+            sourceMac,
+            destinationMac,
+            (byte)TcpFlag.ACK,
+            Array.Empty<byte>());
+    }
+
+    public EthernetFrame CreateResponseFrame(IPv4Packet ipv4Packet, TcpPacket packet, MacAddress sourceMac, MacAddress destinationMac, byte[] payload)
+    {
+        EthernetFrame response = CreateTcpFrame(
+            ipv4Packet,
+            packet,
+            sourceMac,
+            destinationMac,
+            (byte)(TcpFlag.PSH | TcpFlag.ACK),
+            payload);
+        _sequenceNumber += (uint)payload.Length;
+        return response;
+    }
+
+    private EthernetFrame CreateTcpFrame(
+        IPv4Packet ipv4Packet,
+        TcpPacket packet,
+        MacAddress sourceMac,
+        MacAddress destinationMac,
+        byte flags,
+        byte[] payload)
+    {
         var res = new TcpPacket(
                 packet.DestinationPort,
                 packet.Port,
                 _sequenceNumber,
                 _acknowledgmentNumber,
                 packet.DataOffset,
-                (byte)(TcpFlag.SYN | TcpFlag.ACK),
+                flags,
                 ushort.MaxValue,
                 0, // checksum
                 0,
-                Array.Empty<byte>()
+                payload
         );
 
         byte[] bytes = res.ToBytes();

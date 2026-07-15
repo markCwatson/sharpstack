@@ -29,6 +29,7 @@ public sealed class TcpServer
         Console.WriteLine($"TCP listener found for port {tcpPacket.DestinationPort}");
 
         TcpConnection conn = GetOrCreateTcpConnection(ipv4Packet.Source, ipv4Packet.Destination, tcpPacket.Port, tcpPacket.DestinationPort);
+        bool isNewPayload = tcpPacket.Payload.Length > 0 && tcpPacket.SequenceNumber == conn.NextExpectedSequenceNumber;
         EthernetFrame? res = conn.UpdateState(ipv4Packet, tcpPacket, sourceMac);
         Console.WriteLine($"TCP connection state after packet: established={conn.IsEstablished}, response={(res is not null ? "generated" : "none")}");
         if (res is not null)
@@ -46,14 +47,21 @@ public sealed class TcpServer
             return null;
         }
 
+        if (!isNewPayload)
+        {
+            Console.WriteLine("TCP payload is a retransmission or out-of-order segment; sending acknowledgment without dispatching it");
+            return conn.CreateAcknowledgmentFrame(ipv4Packet, tcpPacket, Stack.MacAddress, sourceMac);
+        }
+
         conn.ReceiveData(tcpPacket.Payload);
         Console.WriteLine($"Dispatching {tcpPacket.Payload.Length} payload bytes to the application");
 
         byte[] response = await listener.HandleRequestAsync(conn);
         Console.WriteLine($"Application returned {response.Length} response bytes");
 
-        // return ethernet frame
-        return null;
+        return response.Length == 0
+            ? conn.CreateAcknowledgmentFrame(ipv4Packet, tcpPacket, Stack.MacAddress, sourceMac)
+            : conn.CreateResponseFrame(ipv4Packet, tcpPacket, Stack.MacAddress, sourceMac, response);
     }
 
     public TcpConnection GetOrCreateTcpConnection(Ipv4Address sourceIp, Ipv4Address destinationIp, ushort sourcePort, ushort destinationPort)
