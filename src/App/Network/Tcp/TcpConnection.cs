@@ -26,6 +26,7 @@ public sealed class TcpConnection
     public EthernetFrame? UpdateState(IPv4Packet ipv4Packet, TcpPacket tcpPacket, MacAddress remoteMac)
     {
         Console.WriteLine($"TCP state before packet: {_state}; flags=0x{tcpPacket.Flags:X2}, seq={tcpPacket.SequenceNumber}, ack={tcpPacket.AcknowledgmentNumber}");
+        bool finReceived = (tcpPacket.Flags & (byte)TcpFlag.FIN) != 0;
 
         if (_state == TcpState.Listen && (tcpPacket.Flags & (byte)TcpFlag.SYN) != 0)
         {
@@ -44,18 +45,31 @@ public sealed class TcpConnection
         {
             Console.WriteLine($"TCP ACK did not establish connection; expected ack={_sequenceNumber + 1}");
         }
-        else if (_state == TcpState.Established && (tcpPacket.Flags & (byte)TcpFlag.FIN) != 0)
+        else if ((_state == TcpState.Established || _state == TcpState.CloseWait) && finReceived)
         {
-            _state = TcpState.CloseWait;
-            Console.WriteLine("TCP FIN received; connection moved to CloseWait");
+            if (_state == TcpState.Established)
+            {
+                _state = TcpState.CloseWait;
+                Console.WriteLine("TCP FIN received; connection moved to CloseWait");
+            }
+            else
+            {
+                Console.WriteLine("TCP FIN retransmission received while in CloseWait");
+            }
         }
 
         if (tcpPacket.SequenceNumber == _acknowledgmentNumber)
         {
             _acknowledgmentNumber += (uint)tcpPacket.Payload.Length;
 
-            if ((tcpPacket.Flags & (byte)TcpFlag.FIN) != 0)
+            if (finReceived)
                 _acknowledgmentNumber++;
+        }
+
+        if (finReceived && _state == TcpState.CloseWait)
+        {
+            Console.WriteLine($"TCP FIN acknowledged with ack={_acknowledgmentNumber}");
+            return CreateAcknowledgmentFrame(ipv4Packet, tcpPacket, Stack.MacAddress, remoteMac);
         }
 
         return null;

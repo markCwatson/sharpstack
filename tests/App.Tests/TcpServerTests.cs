@@ -88,6 +88,34 @@ public class TcpServerTests
         Assert.Equal(125u, retransmissionAck.AcknowledgmentNumber);
     }
 
+    [Fact]
+    public async Task HandlePacket_AcknowledgesFinAndFinRetransmission()
+    {
+        var server = new TcpServer();
+        var application = new RecordingApplication();
+        server.RegisterTcpListener(80, application);
+
+        var syn = new TcpPacket(49152, 80, 123, 0, 5, 0x02, 0, 0, 0, Array.Empty<byte>());
+        await server.HandlePacket(CreateIpv4Packet(syn), PeerMac, Stack.MacAddress);
+
+        var ack = new TcpPacket(49152, 80, 124, 10_001, 5, 0x10, 0, 0, 0, Array.Empty<byte>());
+        await server.HandlePacket(CreateIpv4Packet(ack), PeerMac, Stack.MacAddress);
+
+        var fin = new TcpPacket(49152, 80, 124, 10_001, 5, 0x11, 0, 0, 0, Array.Empty<byte>());
+        EthernetFrame? firstResponse = await server.HandlePacket(CreateIpv4Packet(fin), PeerMac, Stack.MacAddress);
+        EthernetFrame? retransmissionResponse = await server.HandlePacket(CreateIpv4Packet(fin), PeerMac, Stack.MacAddress);
+
+        Assert.NotNull(firstResponse);
+        Assert.NotNull(retransmissionResponse);
+
+        TcpPacket firstAck = TcpPacket.Parse(IPv4Packet.Parse(firstResponse.Value.Payload).Payload);
+        TcpPacket retransmissionAck = TcpPacket.Parse(IPv4Packet.Parse(retransmissionResponse.Value.Payload).Payload);
+        Assert.Equal((byte)0x10, firstAck.Flags);
+        Assert.Equal((byte)0x10, retransmissionAck.Flags);
+        Assert.Equal(125u, firstAck.AcknowledgmentNumber);
+        Assert.Equal(125u, retransmissionAck.AcknowledgmentNumber);
+    }
+
     private static MacAddress PeerMac { get; } = new MacAddress(0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF);
 
     private static IPv4Packet CreateIpv4Packet(TcpPacket tcpPacket)
