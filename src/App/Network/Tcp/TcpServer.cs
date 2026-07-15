@@ -67,9 +67,10 @@ public sealed class TcpServer
         byte[] response = await listener.HandleRequestAsync(conn);
         Console.WriteLine($"Application returned {response.Length} response bytes");
 
-        return response.Length == 0
-            ? conn.CreateAcknowledgmentFrame(ipv4Packet, tcpPacket, Stack.MacAddress, sourceMac)
-            : conn.CreateResponseFrame(ipv4Packet, tcpPacket, Stack.MacAddress, sourceMac, response);
+        if (response.Length == 0)
+            return conn.CreateAcknowledgmentFrame(ipv4Packet, tcpPacket, Stack.MacAddress, sourceMac);
+
+        return conn.CreateResponseFrame(ipv4Packet, tcpPacket, Stack.MacAddress, sourceMac, response);
     }
 
     public TcpConnection GetOrCreateTcpConnection(Ipv4Address sourceIp, Ipv4Address destinationIp, ushort sourcePort, ushort destinationPort)

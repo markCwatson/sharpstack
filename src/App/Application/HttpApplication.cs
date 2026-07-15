@@ -30,6 +30,7 @@ public sealed class HttpApplication : IApplication
         if (requestParts[1] != "/")
             return Task.FromResult(CreateResponse("404 Not Found", "Not Found\n"));
 
+        conn.ConsumeData(headerEnd + 4); // +4 for the \r\n\r\n
         return Task.FromResult(CreateResponse("200 OK", "Hello from sharpstack!\n"));
     }
 
