@@ -68,6 +68,7 @@ public class TcpConnectionTests
         Assert.Equal(10_000u, responseTcp.SequenceNumber);
         Assert.Equal(0u, responseTcp.AcknowledgmentNumber);
         Assert.Equal((byte)0x12, responseTcp.Flags);
+        Assert.Equal(ushort.MaxValue, responseTcp.WindowSize);
 
         byte[] responseIpBytes = responseIp.ToBytes();
         Assert.Equal((ushort)0, Checksum.Calculate(responseIpBytes[..(responseIp.HeaderLength * 4)]));

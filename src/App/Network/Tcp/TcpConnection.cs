@@ -69,7 +69,7 @@ public sealed class TcpConnection
                 _acknowledgmentNumber,
                 packet.DataOffset,
                 (byte)(TcpFlag.SYN | TcpFlag.ACK),
-                0,
+                ushort.MaxValue,
                 0, // checksum
                 0,
                 Array.Empty<byte>()
