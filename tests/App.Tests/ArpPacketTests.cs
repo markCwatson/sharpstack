@@ -91,11 +91,11 @@ public class ArpPacketTests
             EtherType: (ushort)EtherType.ARP,
             Payload: requestPayload);
 
-        var response = Stack.HandleArpPacket(incoming);
+        IReadOnlyList<EthernetFrame> responses = Stack.HandleArpPacket(incoming);
+        EthernetFrame response = Assert.Single(responses);
 
-        Assert.NotNull(response);
-        Assert.Equal(sender, response.Value.Destination);
-        Assert.Equal(Stack.MacAddress, response.Value.Source);
+        Assert.Equal(sender, response.Destination);
+        Assert.Equal(Stack.MacAddress, response.Source);
         Assert.Equal(new byte[]
         {
             0x00, 0x01,
@@ -107,7 +107,7 @@ public class ArpPacketTests
             0x0A, 0x00, 0x00, 0x02,
             0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF,
             0x0A, 0x00, 0x00, 0x01
-        }, response.Value.Payload);
+        }, response.Payload);
     }
 
     [Fact]
@@ -131,8 +131,8 @@ public class ArpPacketTests
             EtherType: (ushort)EtherType.ARP,
             Payload: replyPayload);
 
-        var response = Stack.HandleArpPacket(incoming);
+        IReadOnlyList<EthernetFrame> response = Stack.HandleArpPacket(incoming);
 
-        Assert.Null(response);
+        Assert.Empty(response);
     }
 }

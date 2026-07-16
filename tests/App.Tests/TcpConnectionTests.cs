@@ -1,104 +1,160 @@
-using System.Buffers.Binary;
-using App.Network;
-using App.Network.Ethernet;
-using App.Network.IPv4;
 using App.Network.Tcp;
-using App.Utils;
 
 namespace App.Tests;
 
 public class TcpConnectionTests
 {
     [Fact]
-    public void ReceiveData_AccumulatesBytesUntilConsumed()
+    public void Receive_WithSyn_EmitsSynAckAndEstablishesAfterValidAck()
     {
-        var connection = new TcpConnection();
+        var connection = new TcpConnection(80, 49152);
 
-        connection.ReceiveData([0x47, 0x45]);
-        connection.ReceiveData([0x54, 0x20]);
+        TcpResult synResult = connection.Receive(Packet(sequence: 123, flags: TcpFlag.SYN | TcpFlag.ECE | TcpFlag.CWR));
+
+        TcpPacket synAck = Assert.Single(synResult.Outbound);
+        Assert.Equal((ushort)80, synAck.Port);
+        Assert.Equal((ushort)49152, synAck.DestinationPort);
+        Assert.Equal(10_000u, synAck.SequenceNumber);
+        Assert.Equal(124u, synAck.AcknowledgmentNumber);
+        Assert.Equal((byte)(TcpFlag.SYN | TcpFlag.ACK), synAck.Flags);
+        Assert.Equal(TcpState.SynReceived, connection.State);
+
+        TcpResult ackResult = connection.Receive(Packet(sequence: 124, acknowledgment: 10_001, flags: TcpFlag.ACK));
+
+        Assert.Empty(ackResult.Outbound);
+        Assert.Equal(TcpState.Established, connection.State);
+    }
+
+    [Fact]
+    public void Receive_InOrderPayload_BuffersDataAndAcknowledgesIt()
+    {
+        TcpConnection connection = EstablishedConnection();
+
+        TcpResult first = connection.Receive(Packet(sequence: 124, acknowledgment: 10_001, flags: TcpFlag.PSH | TcpFlag.ACK, payload: [0x47, 0x45]));
+        TcpResult second = connection.Receive(Packet(sequence: 126, acknowledgment: 10_001, flags: TcpFlag.PSH | TcpFlag.ACK, payload: [0x54, 0x20]));
         connection.ConsumeData(3);
 
+        Assert.True(first.DataAvailable);
+        Assert.True(second.DataAvailable);
+        Assert.Equal(126u, Assert.Single(first.Outbound).AcknowledgmentNumber);
+        Assert.Equal(128u, Assert.Single(second.Outbound).AcknowledgmentNumber);
         Assert.Equal(new byte[] { 0x20 }, connection.GetReceivedData());
     }
 
     [Fact]
-    public void GetReceivedData_ReturnsCopyOfBufferedData()
+    public void Receive_RetransmittedPayload_AcknowledgesWithoutDispatchingDataAgain()
     {
-        var connection = new TcpConnection();
-        connection.ReceiveData([0x47]);
+        TcpConnection connection = EstablishedConnection();
+        TcpPacket payload = Packet(sequence: 124, acknowledgment: 10_001, flags: TcpFlag.PSH | TcpFlag.ACK, payload: [0x47]);
 
-        byte[] receivedData = connection.GetReceivedData();
-        receivedData[0] = 0x58;
+        TcpResult first = connection.Receive(payload);
+        TcpResult retransmission = connection.Receive(payload);
 
+        Assert.True(first.DataAvailable);
+        Assert.False(retransmission.DataAvailable);
+        Assert.Equal(125u, Assert.Single(retransmission.Outbound).AcknowledgmentNumber);
         Assert.Equal(new byte[] { 0x47 }, connection.GetReceivedData());
     }
 
     [Fact]
-    public void ConsumeData_MoreThanBufferedBytes_ThrowsArgumentException()
+    public void GetReceivedData_ReturnsCopyAndConsumeRejectsInvalidCount()
     {
-        var connection = new TcpConnection();
-        connection.ReceiveData([0x47]);
+        TcpConnection connection = EstablishedConnection();
+        connection.Receive(Packet(sequence: 124, acknowledgment: 10_001, flags: TcpFlag.ACK, payload: [0x47]));
 
-        Assert.Throws<ArgumentException>(() => connection.ConsumeData(2));
+        byte[] received = connection.GetReceivedData();
+        received[0] = 0x58;
+
+        Assert.Equal(new byte[] { 0x47 }, connection.GetReceivedData());
+        Assert.Throws<ArgumentOutOfRangeException>(() => connection.ConsumeData(2));
+        Assert.Throws<ArgumentOutOfRangeException>(() => connection.ConsumeData(-1));
     }
 
     [Fact]
-    public void CreateEthernetFrame_ReturnsReversedSynAckWithValidChecksums()
+    public void SendAndClose_ConsumePayloadAndFinSequenceSpace()
     {
-        var connection = new TcpConnection();
-        var peerMac = new MacAddress(0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF);
-        var peerIp = new Ipv4Address("10.0.0.1");
-        var ipv4Packet = new IPv4Packet(
-            4, 5, 0, 40, 0, 0, 0, 64, (byte)Ipv4Protocol.TCP, 0,
-            peerIp, Stack.Ipv4Address, Array.Empty<byte>());
-        var syn = new TcpPacket(49152, 80, 123, 0, 5, 0x02, 0, 0, 0, Array.Empty<byte>());
+        TcpConnection connection = EstablishedConnection();
 
-        EthernetFrame response = connection.CreateEthernetFrame(
-            ipv4Packet, syn, Stack.MacAddress, peerMac);
-        IPv4Packet responseIp = IPv4Packet.Parse(response.Payload);
-        TcpPacket responseTcp = TcpPacket.Parse(responseIp.Payload);
+        TcpPacket data = Assert.Single(connection.Send([0x41, 0x42]).Outbound);
+        TcpPacket fin = Assert.Single(connection.Close().Outbound);
 
-        Assert.Equal(peerMac, response.Destination);
-        Assert.Equal(Stack.MacAddress, response.Source);
-        Assert.Equal((ushort)EtherType.IPv4, response.EtherType);
-        Assert.Equal(Stack.Ipv4Address, responseIp.Source);
-        Assert.Equal(peerIp, responseIp.Destination);
-        Assert.Equal((ushort)80, responseTcp.Port);
-        Assert.Equal((ushort)49152, responseTcp.DestinationPort);
-        Assert.Equal(10_000u, responseTcp.SequenceNumber);
-        Assert.Equal(0u, responseTcp.AcknowledgmentNumber);
-        Assert.Equal((byte)0x12, responseTcp.Flags);
-        Assert.Equal(ushort.MaxValue, responseTcp.WindowSize);
-
-        byte[] responseIpBytes = responseIp.ToBytes();
-        Assert.Equal((ushort)0, Checksum.Calculate(responseIpBytes[..(responseIp.HeaderLength * 4)]));
-
-        byte[] pseudoHeader = new byte[12];
-        responseIp.Source.ToArray().CopyTo(pseudoHeader, 0);
-        responseIp.Destination.ToArray().CopyTo(pseudoHeader, 4);
-        pseudoHeader[9] = (byte)Ipv4Protocol.TCP;
-        BinaryPrimitives.WriteUInt16BigEndian(
-            pseudoHeader.AsSpan(10, 2), (ushort)responseTcp.ToBytes().Length);
-
-        Assert.Equal(
-            (ushort)0,
-            Checksum.Calculate(pseudoHeader.Concat(responseTcp.ToBytes()).ToArray()));
+        Assert.Equal(10_001u, data.SequenceNumber);
+        Assert.Equal((byte)(TcpFlag.PSH | TcpFlag.ACK), data.Flags);
+        Assert.Equal(10_003u, fin.SequenceNumber);
+        Assert.Equal((byte)(TcpFlag.FIN | TcpFlag.ACK), fin.Flags);
+        Assert.Equal(TcpState.FinWait1, connection.State);
     }
 
     [Fact]
-    public void UpdateState_WithSynAndEcnFlags_ReturnsSynAck()
+    public void PeerClose_WaitsForApplicationCloseAndFinalAck()
     {
-        var connection = new TcpConnection();
-        var peerMac = new MacAddress(0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF);
-        var ipv4Packet = new IPv4Packet(
-            4, 5, 0, 40, 0, 0, 0, 64, (byte)Ipv4Protocol.TCP, 0,
-            new Ipv4Address("10.0.0.1"), Stack.Ipv4Address, Array.Empty<byte>());
-        var synWithEcn = new TcpPacket(
-            49152, 80, 123, 0, 5, 0xC2, 0, 0, 0, Array.Empty<byte>());
+        TcpConnection connection = EstablishedConnection();
 
-        EthernetFrame? response = connection.UpdateState(ipv4Packet, synWithEcn, peerMac);
+        TcpResult peerFin = connection.Receive(Packet(sequence: 124, acknowledgment: 10_001, flags: TcpFlag.FIN | TcpFlag.ACK));
 
-        Assert.NotNull(response);
-        Assert.False(connection.IsEstablished);
+        Assert.True(peerFin.PeerClosed);
+        Assert.Equal((byte)TcpFlag.ACK, Assert.Single(peerFin.Outbound).Flags);
+        Assert.Equal(TcpState.CloseWait, connection.State);
+
+        TcpPacket localFin = Assert.Single(connection.Close().Outbound);
+        Assert.Equal(10_001u, localFin.SequenceNumber);
+        Assert.Equal(125u, localFin.AcknowledgmentNumber);
+        Assert.Equal(TcpState.LastAck, connection.State);
+
+        connection.Receive(Packet(sequence: 125, acknowledgment: 10_002, flags: TcpFlag.ACK));
+        Assert.Equal(TcpState.Closed, connection.State);
     }
+
+    [Fact]
+    public void LocalClose_ExpiresAfterTimeWait()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        var connection = new TcpConnection(80, 49152, getCurrentTime: () => now, timeWaitDuration: TimeSpan.FromSeconds(30));
+        Establish(connection);
+
+        connection.Close();
+        connection.Receive(Packet(sequence: 124, acknowledgment: 10_002, flags: TcpFlag.ACK));
+        TcpResult peerFin = connection.Receive(Packet(sequence: 124, acknowledgment: 10_002, flags: TcpFlag.FIN | TcpFlag.ACK));
+
+        Assert.Equal(TcpState.TimeWait, connection.State);
+        Assert.Equal(125u, Assert.Single(peerFin.Outbound).AcknowledgmentNumber);
+        Assert.False(connection.TryExpireTimeWait());
+
+        now += TimeSpan.FromSeconds(30);
+        Assert.True(connection.TryExpireTimeWait());
+        Assert.Equal(TcpState.Closed, connection.State);
+    }
+
+    [Fact]
+    public void SimultaneousClose_TransitionsThroughClosingToTimeWait()
+    {
+        TcpConnection connection = EstablishedConnection();
+        connection.Close();
+
+        connection.Receive(Packet(sequence: 124, acknowledgment: 10_001, flags: TcpFlag.FIN | TcpFlag.ACK));
+        Assert.Equal(TcpState.Closing, connection.State);
+
+        connection.Receive(Packet(sequence: 125, acknowledgment: 10_002, flags: TcpFlag.ACK));
+        Assert.Equal(TcpState.TimeWait, connection.State);
+    }
+
+    private static TcpConnection EstablishedConnection()
+    {
+        var connection = new TcpConnection(80, 49152);
+        Establish(connection);
+        return connection;
+    }
+
+    private static void Establish(TcpConnection connection)
+    {
+        connection.Receive(Packet(sequence: 123, flags: TcpFlag.SYN));
+        connection.Receive(Packet(sequence: 124, acknowledgment: 10_001, flags: TcpFlag.ACK));
+    }
+
+    private static TcpPacket Packet(
+        uint sequence,
+        uint acknowledgment = 0,
+        TcpFlag flags = 0,
+        byte[]? payload = null) =>
+        new(49152, 80, sequence, acknowledgment, 5, (byte)flags, ushort.MaxValue, 0, 0, payload ?? []);
 }

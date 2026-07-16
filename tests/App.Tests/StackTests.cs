@@ -1,8 +1,11 @@
+using System.Text;
+using App.Application;
 using App.Device;
 using App.Network;
 using App.Network.Ethernet;
 using App.Network.ICMP;
 using App.Network.IPv4;
+using App.Network.Tcp;
 using App.Utils;
 
 namespace App.Tests;
@@ -140,5 +143,70 @@ public class StackTests
         Assert.Equal((ushort)0x0001, icmpResponse.SequenceNumber);
         Assert.Equal(new byte[] { 0x70, 0x69, 0x6E, 0x67 }, icmpResponse.Payload);
         Assert.Equal((ushort)0x0000, Checksum.Calculate(response.Payload));
+    }
+
+    [Fact]
+    public async Task MockDevice_CompleteHttpRequest_WritesAckResponseAndFinInOrder()
+    {
+        var stack = new Stack();
+        stack.RegisterTcpListener(80, new HttpApplication());
+
+        await StackRunner.ProcessOneEthernetFrame(
+            stack,
+            new MockDevice(CreateTcpFrame(new TcpPacket(
+                49152, 80, 123, 0, 5, (byte)TcpFlag.SYN, ushort.MaxValue, 0, 0, [])).ToBytes()));
+        await StackRunner.ProcessOneEthernetFrame(
+            stack,
+            new MockDevice(CreateTcpFrame(new TcpPacket(
+                49152, 80, 124, 10_001, 5, (byte)TcpFlag.ACK, ushort.MaxValue, 0, 0, [])).ToBytes()));
+
+        byte[] request = Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nHost: 10.0.0.2\r\n\r\n");
+        var requestDevice = new MockDevice(CreateTcpFrame(new TcpPacket(
+            49152,
+            80,
+            124,
+            10_001,
+            5,
+            (byte)(TcpFlag.PSH | TcpFlag.ACK),
+            ushort.MaxValue,
+            0,
+            0,
+            request)).ToBytes());
+
+        await StackRunner.ProcessOneEthernetFrame(stack, requestDevice);
+
+        Assert.Equal(3, requestDevice.WrittenFrames.Count);
+        TcpPacket[] packets = requestDevice.WrittenFrames
+            .Select(frame => TcpPacket.Parse(IPv4Packet.Parse(frame.Payload).Payload))
+            .ToArray();
+        Assert.Equal((byte)TcpFlag.ACK, packets[0].Flags);
+        Assert.Equal((byte)(TcpFlag.PSH | TcpFlag.ACK), packets[1].Flags);
+        Assert.StartsWith("HTTP/1.1 200 OK\r\n", Encoding.ASCII.GetString(packets[1].Payload));
+        Assert.Equal((byte)(TcpFlag.FIN | TcpFlag.ACK), packets[2].Flags);
+    }
+
+    private static EthernetFrame CreateTcpFrame(TcpPacket tcpPacket)
+    {
+        byte[] tcpBytes = tcpPacket.ToBytes();
+        var ipPacket = new IPv4Packet(
+            4,
+            5,
+            0,
+            (ushort)(20 + tcpBytes.Length),
+            0,
+            0,
+            0,
+            64,
+            (byte)Ipv4Protocol.TCP,
+            0,
+            new Ipv4Address("10.0.0.1"),
+            Stack.Ipv4Address,
+            tcpBytes);
+
+        return new EthernetFrame(
+            Stack.MacAddress,
+            new MacAddress(0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF),
+            (ushort)EtherType.IPv4,
+            ipPacket.ToBytes());
     }
 }

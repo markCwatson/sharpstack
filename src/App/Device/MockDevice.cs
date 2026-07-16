@@ -6,6 +6,7 @@ public sealed class MockDevice : IDevice
 {
     private readonly byte[] _data;
     public EthernetFrame? WrittenFrame { get; private set; }
+    public List<EthernetFrame> WrittenFrames { get; } = [];
 
     public MockDevice(byte[] data)
     {
@@ -20,6 +21,7 @@ public sealed class MockDevice : IDevice
     public Task WriteEthernetFrameAsync(EthernetFrame frame)
     {
         WrittenFrame = frame;
+        WrittenFrames.Add(frame);
         return Task.CompletedTask;
     }
 }

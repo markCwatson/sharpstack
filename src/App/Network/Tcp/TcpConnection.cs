@@ -1,231 +1,287 @@
-using System.Buffers.Binary;
-using App.Network.Ethernet;
-using App.Network.IPv4;
-
 namespace App.Network.Tcp;
 
+// TCP state, sequence numbers, and accepted receive bytes.
+// Note: gpt-5.6 helped me massively with this the tcp protocol.... it was a good learning exercise.
 public sealed class TcpConnection
 {
+    public static TimeSpan DefaultTimeWaitDuration { get; } = TimeSpan.FromMinutes(1);
+
+    private readonly ushort _localPort;
+    private readonly ushort _remotePort;
+    private readonly List<byte> _receivedData = [];
+    private readonly Func<DateTimeOffset> _getCurrentTime;
+    private readonly TimeSpan _timeWaitDuration;
+    private uint _sendUnacknowledged;
+    private uint _sendNext; // this is the next sequence number we will send, and is used to determine if we can send more data
+    private uint _receiveNext; // this is what we expect the next sequence number to be from the peer, and is used to determine if we can accept the data
+    private DateTimeOffset? _timeWaitExpiresAt;
     private TcpState _state = TcpState.Listen;
+
+    public TcpConnection(
+        ushort localPort = 0,
+        ushort remotePort = 0,
+        uint initialSequenceNumber = 10_000,
+        Func<DateTimeOffset>? getCurrentTime = null,
+        TimeSpan? timeWaitDuration = null)
+    {
+        _localPort = localPort;
+        _remotePort = remotePort;
+        _sendUnacknowledged = initialSequenceNumber;
+        _sendNext = initialSequenceNumber;
+        _getCurrentTime = getCurrentTime ?? (() => DateTimeOffset.UtcNow);
+        _timeWaitDuration = timeWaitDuration ?? DefaultTimeWaitDuration;
+    }
+
+    public TcpState State => _state;
     public bool IsEstablished => _state == TcpState.Established;
     public bool IsClosed => _state == TcpState.Closed;
-    private uint _sequenceNumber = 10_000;
-    private uint _acknowledgmentNumber;
-    private readonly List<byte> _receivedData = new();
-    public uint NextExpectedSequenceNumber => _acknowledgmentNumber;
 
-    // steam-like interface for tcp server to read data and the application to consume it
     public byte[] GetReceivedData() => _receivedData.ToArray();
-    public void ReceiveData(byte[] data) => _receivedData.AddRange(data);
+
     public void ConsumeData(int count)
     {
-        if (count > _receivedData.Count)
-            throw new ArgumentException("Cannot consume more data than received.");
+        if (count < 0 || count > _receivedData.Count)
+            throw new ArgumentOutOfRangeException(nameof(count), "Cannot consume more data than received.");
+
         _receivedData.RemoveRange(0, count);
     }
 
-    public EthernetFrame? UpdateState(IPv4Packet ipv4Packet, TcpPacket tcpPacket, MacAddress remoteMac)
+    public TcpResult Receive(TcpPacket packet)
     {
-        Console.WriteLine($"TCP state before packet: {_state}; flags=0x{tcpPacket.Flags:X2}, seq={tcpPacket.SequenceNumber}, ack={tcpPacket.AcknowledgmentNumber}");
-        bool finReceived = (tcpPacket.Flags & (byte)TcpFlag.FIN) != 0;
+        return _state switch
+        {
+            TcpState.Listen => ReceiveInListenState(packet),
+            TcpState.SynReceived => ReceiveInSynReceivedState(packet),
+            TcpState.Established => ReceiveInEstablishedState(packet),
+            TcpState.FinWait1 => ReceiveInFinWait1State(packet),
+            TcpState.FinWait2 => ReceiveInFinWait2State(packet),
+            TcpState.CloseWait => ReceiveInCloseWaitState(packet),
+            TcpState.Closing => ReceiveInClosingState(packet),
+            TcpState.LastAck => ReceiveInLastAckState(packet),
+            TcpState.TimeWait => ReceiveInTimeWaitState(packet),
+            TcpState.Closed => TcpResult.Empty,
+            _ => throw new InvalidOperationException($"Invalid TCP state: {_state}")
+        };
+    }
 
-        if (_state == TcpState.Listen && (tcpPacket.Flags & (byte)TcpFlag.SYN) != 0)
+    public TcpResult Send(byte[] payload)
+    {
+        if (_state is not (TcpState.Established or TcpState.CloseWait))
+            throw new InvalidOperationException($"Cannot send data while in {_state}.");
+
+        if (payload.Length == 0)
+            return TcpResult.Empty;
+
+        return new TcpResult([CreateOutboundSegmentAndAdvanceSequence(TcpFlag.PSH | TcpFlag.ACK, payload)]);
+    }
+
+    public TcpResult Close()
+    {
+        switch (_state)
         {
-            _state = TcpState.SynReceived;
-            _acknowledgmentNumber = tcpPacket.SequenceNumber + 1;
-            Console.WriteLine($"TCP SYN accepted; sending SYN-ACK with seq={_sequenceNumber}, ack={_acknowledgmentNumber}");
-            return CreateEthernetFrame(ipv4Packet, tcpPacket, Stack.MacAddress, remoteMac);
+            case TcpState.Established:
+                _state = TcpState.FinWait1;
+                break;
+            case TcpState.CloseWait:
+                _state = TcpState.LastAck;
+                break;
+            default:
+                return TcpResult.Empty;
         }
-        else if (_state == TcpState.SynReceived && (tcpPacket.Flags & (byte)TcpFlag.ACK) != 0 && tcpPacket.AcknowledgmentNumber == _sequenceNumber + 1)
-        {
-            _sequenceNumber++;
-            _state = TcpState.Established;
-            Console.WriteLine("TCP final handshake ACK accepted; connection established");
-        }
-        else if (_state == TcpState.SynReceived && (tcpPacket.Flags & (byte)TcpFlag.ACK) != 0)
-        {
-            Console.WriteLine($"TCP ACK did not establish connection; expected ack={_sequenceNumber + 1}");
-        }
-        else if (_state == TcpState.Established && finReceived)
-        {
+
+        return new TcpResult([CreateOutboundSegmentAndAdvanceSequence(TcpFlag.FIN | TcpFlag.ACK, [])]);
+    }
+
+    public bool TryExpireTimeWait()
+    {
+        if (_state != TcpState.TimeWait || _timeWaitExpiresAt is null || _getCurrentTime() < _timeWaitExpiresAt)
+            return false;
+
+        _state = TcpState.Closed;
+        _timeWaitExpiresAt = null;
+        return true;
+    }
+
+    private TcpResult ReceiveInListenState(TcpPacket packet)
+    {
+        if ((packet.Flags & (byte)TcpFlag.SYN) == 0)
+            return TcpResult.Empty;
+
+        _receiveNext = packet.SequenceNumber + 1;
+        _state = TcpState.SynReceived;
+        return new TcpResult([CreateOutboundSegmentAndAdvanceSequence(TcpFlag.SYN | TcpFlag.ACK, [])]);
+    }
+
+    private TcpResult ReceiveInSynReceivedState(TcpPacket packet)
+    {
+        if ((packet.Flags & (byte)TcpFlag.ACK) == 0 || packet.AcknowledgmentNumber != _sendNext)
+            return TcpResult.Empty;
+
+        _sendUnacknowledged = packet.AcknowledgmentNumber;
+        _state = TcpState.Established;
+        return TcpResult.Empty; // we expect two INs in a row here
+    }
+
+    private TcpResult ReceiveInEstablishedState(TcpPacket packet)
+    {
+        AcceptAcknowledgment(packet);
+
+        if (packet.Payload.Length == 0 && (packet.Flags & (byte)TcpFlag.SYN) == 0 && (packet.Flags & (byte)TcpFlag.FIN) == 0)
+            return TcpResult.Empty;
+
+        if (!TryToReadPayload(packet, out byte[] payloadData))
+            return new TcpResult([CreateOutboundSegmentAndAdvanceSequence(TcpFlag.ACK, [])]);
+
+        if (payloadData.Length > 0)
+            _receivedData.AddRange(payloadData);
+
+        bool finReceived = (packet.Flags & (byte)TcpFlag.FIN) != 0;
+        if (finReceived)
             _state = TcpState.CloseWait;
-            Console.WriteLine("TCP FIN received; connection moved to CloseWait");
+
+        return new TcpResult(
+            Outbound: [CreateOutboundSegmentAndAdvanceSequence(TcpFlag.ACK, [])],
+            DataAvailable: payloadData.Length > 0,
+            PeerClosed: finReceived);
+    }
+
+    private TcpResult ReceiveInFinWait1State(TcpPacket packet)
+    {
+        bool finAcknowledged = AcceptAcknowledgment(packet) && _sendUnacknowledged == _sendNext;
+
+        if ((packet.Flags & (byte)TcpFlag.FIN) == 0)
+        {
+            if (finAcknowledged)
+                _state = TcpState.FinWait2;
+
+            return TcpResult.Empty;
         }
-        else if (_state == TcpState.LastAck &&
-                 (tcpPacket.Flags & (byte)TcpFlag.ACK) != 0 &&
-                 tcpPacket.AcknowledgmentNumber == _sequenceNumber)
+
+        if (!TryToReadPayload(packet, out _))
+            return new TcpResult([CreateOutboundSegmentAndAdvanceSequence(TcpFlag.ACK, [])]);
+
+        if (finAcknowledged)
+            EnterTimeWait();
+        else
+            _state = TcpState.Closing;
+
+        return new TcpResult([CreateOutboundSegmentAndAdvanceSequence(TcpFlag.ACK, [])], PeerClosed: true);
+    }
+
+    private TcpResult ReceiveInFinWait2State(TcpPacket packet)
+    {
+        AcceptAcknowledgment(packet);
+
+        if ((packet.Flags & (byte)TcpFlag.FIN) == 0)
+            return TcpResult.Empty;
+
+        if (!TryToReadPayload(packet, out _))
+            return new TcpResult([CreateOutboundSegmentAndAdvanceSequence(TcpFlag.ACK, [])]);
+
+        EnterTimeWait();
+        return new TcpResult([CreateOutboundSegmentAndAdvanceSequence(TcpFlag.ACK, [])], PeerClosed: true);
+    }
+
+    private TcpResult ReceiveInCloseWaitState(TcpPacket packet)
+    {
+        AcceptAcknowledgment(packet);
+
+        if ((packet.Flags & (byte)TcpFlag.FIN) != 0)
+            return new TcpResult([CreateOutboundSegmentAndAdvanceSequence(TcpFlag.ACK, [])]);
+
+        return TcpResult.Empty;
+    }
+
+    private TcpResult ReceiveInClosingState(TcpPacket packet)
+    {
+        if (AcceptAcknowledgment(packet) && _sendUnacknowledged == _sendNext)
+            EnterTimeWait();
+
+        return TcpResult.Empty;
+    }
+
+    private TcpResult ReceiveInLastAckState(TcpPacket packet)
+    {
+        if (AcceptAcknowledgment(packet) && _sendUnacknowledged == _sendNext)
         {
             _state = TcpState.Closed;
-            Console.WriteLine("TCP final ACK received; connection closed");
+            return TcpResult.Empty;
         }
 
-        if (tcpPacket.SequenceNumber == _acknowledgmentNumber)
-        {
-            _acknowledgmentNumber += (uint)tcpPacket.Payload.Length;
+        if ((packet.Flags & (byte)TcpFlag.FIN) != 0)
+            return new TcpResult([CreateOutboundSegmentAndAdvanceSequence(TcpFlag.ACK, [])]);
 
-            if (finReceived)
-                _acknowledgmentNumber++;
-        }
-
-        if (finReceived && _state == TcpState.CloseWait)
-        {
-            Console.WriteLine($"TCP FIN acknowledged; sending FIN-ACK with seq={_sequenceNumber}, ack={_acknowledgmentNumber}");
-            EthernetFrame response = CreateFinAcknowledgmentFrame(ipv4Packet, tcpPacket, Stack.MacAddress, remoteMac);
-            _state = TcpState.LastAck;
-            return response;
-        }
-
-        if (finReceived && _state == TcpState.LastAck)
-        {
-            Console.WriteLine($"TCP duplicate FIN acknowledged while waiting for final ACK={_sequenceNumber}");
-            return CreateAcknowledgmentFrame(ipv4Packet, tcpPacket, Stack.MacAddress, remoteMac);
-        }
-
-        return null;
+        return TcpResult.Empty;
     }
 
-    public EthernetFrame CreateEthernetFrame(IPv4Packet ipv4Packet, TcpPacket packet, MacAddress sourceMac, MacAddress destinationMac)
+    private TcpResult ReceiveInTimeWaitState(TcpPacket packet)
     {
-        return CreateTcpFrame(
-            ipv4Packet,
-            packet,
-            sourceMac,
-            destinationMac,
-            (byte)(TcpFlag.SYN | TcpFlag.ACK),
-            Array.Empty<byte>());
+        if ((packet.Flags & (byte)TcpFlag.FIN) == 0)
+            return TcpResult.Empty;
+
+        EnterTimeWait();
+        return new TcpResult([CreateOutboundSegmentAndAdvanceSequence(TcpFlag.ACK, [])]);
     }
 
-    public EthernetFrame CreateAcknowledgmentFrame(IPv4Packet ipv4Packet, TcpPacket packet, MacAddress sourceMac, MacAddress destinationMac)
+    private void EnterTimeWait()
     {
-        return CreateTcpFrame(
-            ipv4Packet,
-            packet,
-            sourceMac,
-            destinationMac,
-            (byte)TcpFlag.ACK,
-            Array.Empty<byte>());
+        _state = TcpState.TimeWait;
+        _timeWaitExpiresAt = _getCurrentTime() + _timeWaitDuration;
     }
 
-    public EthernetFrame CreateFinAcknowledgmentFrame(IPv4Packet ipv4Packet, TcpPacket packet, MacAddress sourceMac, MacAddress destinationMac)
+    private bool TryToReadPayload(TcpPacket packet, out byte[] acceptedData)
     {
-        EthernetFrame response = CreateTcpFrame(
-            ipv4Packet,
-            packet,
-            sourceMac,
-            destinationMac,
-            (byte)(TcpFlag.FIN | TcpFlag.ACK),
-            Array.Empty<byte>());
-        _sequenceNumber++;
-        return response;
+        acceptedData = Array.Empty<byte>();
+
+        if (packet.SequenceNumber != _receiveNext)
+            return false;
+
+        acceptedData = packet.Payload;
+        _receiveNext += (uint)packet.Payload.Length;
+
+        if ((packet.Flags & (byte)TcpFlag.SYN) != 0)
+            _receiveNext++;
+
+        if ((packet.Flags & (byte)TcpFlag.FIN) != 0)
+            _receiveNext++;
+
+        return true;
     }
 
-    public EthernetFrame CreateResponseFrame(IPv4Packet ipv4Packet, TcpPacket packet, MacAddress sourceMac, MacAddress destinationMac, byte[] payload)
+    private bool AcceptAcknowledgment(TcpPacket packet)
     {
-        EthernetFrame response = CreateTcpFrame(
-            ipv4Packet,
-            packet,
-            sourceMac,
-            destinationMac,
-            (byte)(TcpFlag.PSH | TcpFlag.ACK),
+        if ((packet.Flags & (byte)TcpFlag.ACK) == 0)
+            return false;
+
+        if (packet.AcknowledgmentNumber < _sendUnacknowledged || packet.AcknowledgmentNumber > _sendNext)
+            return false;
+
+        _sendUnacknowledged = packet.AcknowledgmentNumber;
+        return true;
+    }
+
+    private TcpPacket CreateOutboundSegmentAndAdvanceSequence(TcpFlag flags, byte[] payload)
+    {
+        var packet = new TcpPacket(
+            _localPort,
+            _remotePort,
+            _sendNext,
+            _receiveNext,
+            5,
+            (byte)flags,
+            ushort.MaxValue,
+            0,
+            0,
             payload);
-        _sequenceNumber += (uint)payload.Length;
-        return response;
-    }
 
-    private EthernetFrame CreateTcpFrame(
-        IPv4Packet ipv4Packet,
-        TcpPacket packet,
-        MacAddress sourceMac,
-        MacAddress destinationMac,
-        byte flags,
-        byte[] payload)
-    {
-        var res = new TcpPacket(
-                packet.DestinationPort,
-                packet.Port,
-                _sequenceNumber,
-                _acknowledgmentNumber,
-                packet.DataOffset,
-                flags,
-                ushort.MaxValue,
-                0, // checksum
-                0,
-                payload
-        );
+        _sendNext += (uint)payload.Length;
 
-        byte[] bytes = res.ToBytes();
-        // apparentluy tcp/ipv4 checksums require this
-        PseudoHeader pseudoHeader = new PseudoHeader(ipv4Packet.Destination, ipv4Packet.Source, 0, (byte)Ipv4Protocol.TCP, (ushort)bytes.Length);
-        ushort tcpChecksum = Utils.Checksum.Calculate(pseudoHeader.ToBytes().Concat(res.ToBytes()).ToArray());
-        res = res with { Checksum = tcpChecksum };
+        if ((flags & TcpFlag.SYN) != 0)
+            _sendNext++;
 
-        IPv4Packet ipv4Wrap = new IPv4Packet(
-            ipv4Packet.Version,
-            ipv4Packet.HeaderLength,
-            ipv4Packet.TypeOfService,
-            (ushort)(ipv4Packet.HeaderLength * 4 + res.ToBytes().Length),
-            ipv4Packet.Identification,
-            ipv4Packet.Flags,
-            ipv4Packet.FragmentOffset,
-            ipv4Packet.TimeToLive,
-            ipv4Packet.Protocol,
-            0, // checksum
-            ipv4Packet.Destination,
-            ipv4Packet.Source,
-            res.ToBytes()
-        );
+        if ((flags & TcpFlag.FIN) != 0)
+            _sendNext++;
 
-        byte[] inBytes = ipv4Wrap.ToBytes();
-        int headerLength = ipv4Wrap.HeaderLength * 4;
-        ushort ipv4WrapChecksum = Utils.Checksum.Calculate(inBytes[..headerLength]);
-        ipv4Wrap = ipv4Wrap with { HeaderChecksum = ipv4WrapChecksum };
-
-        return new EthernetFrame(
-            destinationMac,
-            sourceMac,
-            (ushort)EtherType.IPv4,
-            ipv4Wrap.ToBytes()
-        );
-    }
-
-    private enum TcpState
-    {
-        Closed,
-        Listen,
-        SynSent,
-        SynReceived,
-        Established,
-        FinWait1,
-        FinWait2,
-        CloseWait,
-        Closing,
-        LastAck,
-        TimeWait
-    }
-
-    private enum TcpFlag : byte
-    {
-        FIN = 0x01,
-        SYN = 0x02,
-        RST = 0x04,
-        PSH = 0x08,
-        ACK = 0x10,
-        URG = 0x20,
-        ECE = 0x40,
-        CWR = 0x80
-    }
-
-    private record PseudoHeader(Ipv4Address Source, Ipv4Address Destination, byte Zero, byte Protocol, ushort TcpLength)
-    {
-        public byte[] ToBytes()
-        {
-            byte[] bytes = new byte[12];
-            Array.Copy(Source.ToArray(), 0, bytes, 0, 4);
-            Array.Copy(Destination.ToArray(), 0, bytes, 4, 4);
-            bytes[8] = Zero;
-            bytes[9] = Protocol;
-            BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(10, 2), TcpLength);
-            return bytes;
-        }
+        return packet;
     }
 }

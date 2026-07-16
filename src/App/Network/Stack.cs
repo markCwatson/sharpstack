@@ -29,7 +29,7 @@ public sealed class Stack
     public static Ipv4Address Ipv4Address { get; } = new Ipv4Address("10.0.0.2");
     public static MacAddress BroadcastAddress { get; } = new MacAddress(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF);
 
-    public async Task<EthernetFrame?> HandleEthernetFrameAsync(byte[] bytes)
+    public async Task<IReadOnlyList<EthernetFrame>> HandleEthernetFrameAsync(byte[] bytes)
     {
         EthernetFrame incoming = EthernetFrame.Parse(bytes);
 
@@ -37,16 +37,16 @@ public sealed class Stack
         {
             EtherType.ARP => HandleArpPacket(incoming),
             EtherType.IPv4 => await HandleIpv4Packet(incoming),
-            _ => null
+            _ => []
         };
     }
 
-    public static EthernetFrame? HandleArpPacket(EthernetFrame incoming)
+    public static IReadOnlyList<EthernetFrame> HandleArpPacket(EthernetFrame incoming)
     {
         ArpPacket parsed = ArpPacket.Parse(incoming.Payload);
 
         if (parsed.Opcode != 1 || !parsed.TargetIpAddress.Equals(Stack.Ipv4Address))
-            return null;
+            return [];
 
         ArpPacket response = new ArpPacket(
             HardwareType: parsed.HardwareType,
@@ -60,35 +60,35 @@ public sealed class Stack
             TargetIpAddress: parsed.SenderIpAddress
         );
 
-        return new EthernetFrame(
+        return [new EthernetFrame(
             Destination: incoming.Source,
             Source: Stack.MacAddress,
             EtherType: (ushort)EtherType.ARP,
             Payload: response.ToBytes()
-        );
+        )];
     }
 
-    public async Task<EthernetFrame?> HandleIpv4Packet(EthernetFrame incoming)
+    public async Task<IReadOnlyList<EthernetFrame>> HandleIpv4Packet(EthernetFrame incoming)
     {
         IPv4Packet packet = IPv4Packet.Parse(incoming.Payload);
 
         if (packet.Destination != Ipv4Address)
-            return null;
+            return [];
 
         return packet.ProtocolEnum switch
         {
             Ipv4Protocol.ICMP => await HandleIcmpPacket(packet, incoming.Source, incoming.Destination),
             Ipv4Protocol.TCP => await _tcpServer.HandlePacket(packet, incoming.Source, incoming.Destination),
-            _ => null
+            _ => []
         };
     }
 
-    public static async Task<EthernetFrame?> HandleIcmpPacket(IPv4Packet packet, MacAddress sourceMac, MacAddress destinationMac)
+    public static async Task<IReadOnlyList<EthernetFrame>> HandleIcmpPacket(IPv4Packet packet, MacAddress sourceMac, MacAddress destinationMac)
     {
         IcmpPacket incoming = IcmpPacket.Parse(packet.Payload);
 
         if (incoming.TypeEnum != IcmpType.EchoRequest)
-            return null;
+            return [];
 
         IcmpPacket reply = new IcmpPacket(
             (byte)IcmpType.EchoReply,
@@ -125,11 +125,11 @@ public sealed class Stack
 
         Console.WriteLine($"Sending ICMP echo reply to {packet.Source} from {packet.Destination}");
 
-        return new EthernetFrame(
+        return [new EthernetFrame(
             sourceMac,
             MacAddress,
             (ushort)EtherType.IPv4,
             ipv4Wrap.ToBytes() // wrapped in ethernet frame
-        );
+        )];
     }
 }

@@ -4,83 +4,101 @@ using App.Network.IPv4;
 
 namespace App.Network.Tcp;
 
+// connection lookup, application calls, and output collection
 public sealed class TcpServer
 {
-    private Dictionary<ushort, IApplication> _listeners = new();
-    private Dictionary<(Ipv4Address, Ipv4Address, ushort, ushort), TcpConnection> _tcpConnections = new();
+    private readonly Dictionary<ushort, IApplication> _listeners = [];
+    private readonly Dictionary<
+        (Ipv4Address SourceIp, Ipv4Address DestinationIp, ushort SourcePort, ushort DestinationPort),
+        TcpConnection> _tcpConnections = [];
+    private readonly Func<DateTimeOffset>? _getCurrentTime;
+    private readonly TimeSpan? _timeWaitDuration;
+
+    public TcpServer(
+        Func<DateTimeOffset>? getCurrentTime = null,
+        TimeSpan? timeWaitDuration = null)
+    {
+        _getCurrentTime = getCurrentTime;
+        _timeWaitDuration = timeWaitDuration;
+    }
 
     public void RegisterTcpListener(ushort port, IApplication application)
     {
         _listeners[port] = application;
     }
 
-    public async Task<EthernetFrame?> HandlePacket(IPv4Packet ipv4Packet, MacAddress sourceMac, MacAddress destinationMac)
+    public async Task<IReadOnlyList<EthernetFrame>> HandlePacket(IPv4Packet ipv4Packet, MacAddress sourceMac, MacAddress destinationMac)
     {
-        Console.WriteLine($"Received IPv4 packet from {ipv4Packet.Source} to {ipv4Packet.Destination} with protocol {ipv4Packet.Protocol}");
         TcpPacket tcpPacket = TcpPacket.Parse(ipv4Packet.Payload);
-        Console.WriteLine($"TCP packet {tcpPacket.Port} -> {tcpPacket.DestinationPort}, flags=0x{tcpPacket.Flags:X2}, seq={tcpPacket.SequenceNumber}, ack={tcpPacket.AcknowledgmentNumber}, payload={tcpPacket.Payload.Length} bytes");
+
+        Console.WriteLine(
+            $"TCP IN {ipv4Packet.Destination.Value}:{tcpPacket.DestinationPort} " +
+            $"<- {ipv4Packet.Source.Value}:{tcpPacket.Port} " +
+            $"flags=[{(TcpFlag)tcpPacket.Flags}] " +
+            $"seq={tcpPacket.SequenceNumber} " +
+            $"ack={tcpPacket.AcknowledgmentNumber} " +
+            $"payload={tcpPacket.Payload.Length}B");
 
         if (!_listeners.TryGetValue(tcpPacket.DestinationPort, out IApplication? listener) || listener is null)
+            return [];
+
+        var key = (ipv4Packet.Source, ipv4Packet.Destination, tcpPacket.Port, tcpPacket.DestinationPort);
+        TcpConnection conn = GetOrCreateTcpConnection(key);
+        List<(TcpPacket Packet, TcpState State)> outbound = [];
+
+        TcpResult receiveResult = conn.Receive(tcpPacket);
+        outbound.AddRange(receiveResult.Outbound.Select(packet => (packet, conn.State)));
+
+        if (receiveResult.DataAvailable)
         {
-            Console.WriteLine($"No TCP listener is registered for port {tcpPacket.DestinationPort}");
-            return null;
+            ApplicationResult applicationResult = await listener.HandleRequestAsync(conn);
+
+            if (applicationResult.Response.Length > 0)
+                outbound.AddRange(conn.Send(applicationResult.Response).Outbound.Select(packet => (packet, conn.State)));
+
+            if (applicationResult.CloseConnection)
+                outbound.AddRange(conn.Close().Outbound.Select(packet => (packet, conn.State)));
         }
-
-        Console.WriteLine($"TCP listener found for port {tcpPacket.DestinationPort}");
-
-        TcpConnection conn = GetOrCreateTcpConnection(ipv4Packet.Source, ipv4Packet.Destination, tcpPacket.Port, tcpPacket.DestinationPort);
-        bool isNewPayload = tcpPacket.Payload.Length > 0 && tcpPacket.SequenceNumber == conn.NextExpectedSequenceNumber;
-        EthernetFrame? res = conn.UpdateState(ipv4Packet, tcpPacket, sourceMac);
-        Console.WriteLine($"TCP connection state after packet: established={conn.IsEstablished}, response={(res is not null ? "generated" : "none")}");
-        if (res is not null)
-            return res;
 
         if (conn.IsClosed)
+            _tcpConnections.Remove(key);
+
+        EthernetFrame[] frames = outbound
+            .Select(entry => TcpFrameEncoder.Encode(entry.Packet, ipv4Packet, sourceMac))
+            .ToArray();
+
+        foreach ((TcpPacket packet, TcpState state) in outbound)
         {
-            Console.WriteLine("Closing TCP connection; no further payload will be dispatched");
-            _tcpConnections.Remove((ipv4Packet.Source, ipv4Packet.Destination, tcpPacket.Port, tcpPacket.DestinationPort));
-            return null;
+            Console.WriteLine(
+                $"TCP OUT {ipv4Packet.Destination.Value}:{packet.Port} " +
+                $"-> {ipv4Packet.Source.Value}:{packet.DestinationPort} " +
+                $"flags=[{(TcpFlag)packet.Flags}] " +
+                $"seq={packet.SequenceNumber} " +
+                $"ack={packet.AcknowledgmentNumber} " +
+                $"payload={packet.Payload.Length}B " +
+                $"state={state}");
         }
 
-        if (!conn.IsEstablished)
-        {
-            Console.WriteLine("TCP payload was not dispatched because the connection is not established");
-            return null;
-        }
-
-
-        if (tcpPacket.Payload.Length == 0)
-        {
-            Console.WriteLine("TCP connection is established, but this packet has no payload");
-            return null;
-        }
-
-        if (!isNewPayload)
-        {
-            Console.WriteLine("TCP payload is a retransmission or out-of-order segment; sending acknowledgment without dispatching it");
-            return conn.CreateAcknowledgmentFrame(ipv4Packet, tcpPacket, Stack.MacAddress, sourceMac);
-        }
-
-        conn.ReceiveData(tcpPacket.Payload);
-        Console.WriteLine($"Dispatching {tcpPacket.Payload.Length} payload bytes to the application");
-
-        byte[] response = await listener.HandleRequestAsync(conn);
-        Console.WriteLine($"Application returned {response.Length} response bytes");
-
-        if (response.Length == 0)
-            return conn.CreateAcknowledgmentFrame(ipv4Packet, tcpPacket, Stack.MacAddress, sourceMac);
-
-        return conn.CreateResponseFrame(ipv4Packet, tcpPacket, Stack.MacAddress, sourceMac, response);
+        return frames;
     }
 
-    public TcpConnection GetOrCreateTcpConnection(Ipv4Address sourceIp, Ipv4Address destinationIp, ushort sourcePort, ushort destinationPort)
+    public TcpConnection GetOrCreateTcpConnection(
+        (Ipv4Address SourceIp, Ipv4Address DestinationIp, ushort SourcePort, ushort DestinationPort) key)
     {
-        var key = (sourceIp, destinationIp, sourcePort, destinationPort);
-        if (!_tcpConnections.TryGetValue(key, out var connection))
+        if (_tcpConnections.TryGetValue(key, out TcpConnection? connection))
         {
-            connection = new TcpConnection();
-            _tcpConnections[key] = connection;
+            if (!connection.IsClosed && !connection.TryExpireTimeWait())
+                return connection;
+
+            _tcpConnections.Remove(key);
         }
+
+        connection = new TcpConnection(
+            key.DestinationPort,
+            key.SourcePort,
+            getCurrentTime: _getCurrentTime,
+            timeWaitDuration: _timeWaitDuration);
+        _tcpConnections[key] = connection;
         return connection;
     }
 }

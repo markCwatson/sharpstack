@@ -1,7 +1,4 @@
 using App.Network.Tcp;
-using App.Network;
-using App.Network.Ethernet;
-using App.Network.IPv4;
 
 namespace App.Tests;
 
@@ -59,23 +56,6 @@ public class TcpPacketTests
     public void Parse_WithShortHeader_ThrowsArgumentException()
     {
         Assert.Throws<ArgumentException>(() => TcpPacket.Parse(new byte[19]));
-    }
-
-    [Fact]
-    public void UpdateState_WithSyn_AddressesSynAckToPeer()
-    {
-        var connection = new TcpConnection();
-        var peerMac = new MacAddress(0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF);
-        var ipv4Packet = new IPv4Packet(
-            4, 5, 0, 40, 0, 0, 0, 64, (byte)Ipv4Protocol.TCP, 0,
-            new Ipv4Address("10.0.0.1"), Stack.Ipv4Address, Array.Empty<byte>());
-        var syn = new TcpPacket(49152, 80, 123, 0, 5, 0x02, 0, 0, 0, Array.Empty<byte>());
-
-        EthernetFrame? response = connection.UpdateState(ipv4Packet, syn, peerMac);
-
-        Assert.NotNull(response);
-        Assert.Equal(Stack.MacAddress, response.Value.Source);
-        Assert.Equal(peerMac, response.Value.Destination);
     }
 
 }
