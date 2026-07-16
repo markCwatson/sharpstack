@@ -2,25 +2,27 @@
 
 [![.NET tests](https://github.com/markCwatson/sharpstack/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/markCwatson/sharpstack/actions/workflows/tests.yml)
 
-This is a full networking stack and minimal http server written in C#12/.NET10 without the use of `System.Net`.
+![image](img/wireshark.png)
+
+This is a full networking stack and minimal http server written in C#12/.NET10 without the use of `System.Net`. In the image above, the TCP handshake and subsequesnt HTTP request can be seen in wireshark with the response highlighted.
 
 Most of the C# code is hand-written (with the exception of tests which are 100% AI gernerated).
 
 ## Function
 
-The goal is to run a local http server where I can do this
+Run a local http server and do this
 
 ```shell
 ping 10.0.0.2
 ```
 
-and I will receive an ICMP echo response, and this
+and you will receive an ICMP echo response, and this
 
 ```shell
 curl http://10.0.0.2:80/
 ```
 
-and it will return an HTTP response from the custom TCP stack.
+and it will return an HTTP response - through the custom stack - from the http application.
 
 ## Running on Linux
 
