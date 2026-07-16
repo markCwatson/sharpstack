@@ -6,21 +6,18 @@ state transitions, see [TCP connection state machine](tcp-state-machine.md).
 
 ## Where the connection comes from
 
-In the Docker setup, a request takes this path:
+In a native Linux or bridged Linux VM setup, a request takes this path:
 
 ```text
-host curl
-    -> Docker port 127.0.0.1:8080
-    -> socat inside the container
-    -> Linux TCP client at 10.0.0.1:<ephemeral-port>
+Linux host or VM client
+  -> Linux TCP client at 10.0.0.1:<ephemeral-port>
     -> rawstack0
     -> sharpstack at 10.0.0.2:80
 ```
 
 The TCP packets observed by sharpstack are therefore between `10.0.0.1` and
 `10.0.0.2`. The source port `38836` in this example is an ephemeral port chosen
-by the Linux kernel for socat's outbound connection. It will usually change on
-the next request.
+by the Linux kernel. It will usually change on the next request.
 
 ## Example exchange
 
@@ -51,7 +48,7 @@ does not prove exact wire interleaving. Use a packet capture for that.
 | ---------------- | -------------------------------------------------------------------------- |
 | `IN` / `OUT`     | Packet direction relative to sharpstack                                    |
 | `10.0.0.2:80`    | sharpstack's local IP address and TCP port                                 |
-| `10.0.0.1:38836` | Linux/socat peer address and ephemeral port                                |
+| `10.0.0.1:38836` | Linux peer address and ephemeral port                                      |
 | `flags`          | TCP control bits set in this packet                                        |
 | `seq`            | Sequence number of the first byte, SYN, or FIN in this packet              |
 | `ack`            | Cumulative acknowledgment: the next sequence number expected from the peer |
@@ -190,7 +187,7 @@ Sharpstack acknowledges the peer FIN and enters `TimeWait`. TIME-WAIT allows it
 to acknowledge a retransmitted FIN and prevents delayed packets from an old
 connection being confused with a new connection using the same four-tuple.
 
-## Capture on native Linux
+## Capture on Linux
 
 Start sharpstack and capture the TAP interface with Wireshark:
 
@@ -204,45 +201,16 @@ Or capture to a file with tcpdump and inspect it later:
 sudo tcpdump -i rawstack0 -s 0 -w sharpstack.pcap
 ```
 
-Run `curl http://10.0.0.2:80/` in another terminal, stop tcpdump with `Ctrl+C`,
-then open `sharpstack.pcap` in Wireshark.
-
-## Capture with Docker Desktop
-
-On Docker Desktop, `rawstack0` is inside the sharpstack container's Linux
-network namespace. The runtime image does not include tcpdump, so use a
-temporary diagnostic container that joins the same network namespace.
-
-First start sharpstack and create a capture directory:
+Run the client from the Linux host or from a machine with a route to the VM's
+`10.0.0.0/24` network:
 
 ```shell
-./scripts/run-docker.sh
-mkdir -p captures
+curl -i http://10.0.0.2:80/
 ```
 
-Then start the capture in a second terminal:
-
-```shell
-docker run --rm \
-  --network container:sharpstack \
-  --cap-add NET_RAW \
-  --cap-add NET_ADMIN \
-  --volume "$PWD/captures:/captures" \
-  nicolaka/netshoot \
-  tcpdump -i rawstack0 -s 0 -U \
-  -w /captures/sharpstack.pcap \
-  'arp or icmp or tcp port 80'
-```
-
-While tcpdump is running, make a request from another terminal:
-
-```shell
-curl -i http://127.0.0.1:8080/
-```
-
-Stop tcpdump with `Ctrl+C`, then open `captures/sharpstack.pcap` in Wireshark on
-the host. The capture contains the TAP-side connection between `10.0.0.1` and
-`10.0.0.2`; it does not contain the separate host-to-socat connection on port 8080.
+Stop tcpdump with `Ctrl+C`, then open `sharpstack.pcap` in Wireshark. For a
+Linux VM, capture `rawstack0` inside the VM; the VM's network configuration must
+provide the client with a route to `10.0.0.2`.
 
 A validated capture displayed with relative sequence numbers looked like this:
 
